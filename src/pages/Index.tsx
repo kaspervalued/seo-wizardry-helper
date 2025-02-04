@@ -3,7 +3,9 @@ import { WizardProgress } from "@/components/SEOWizard/WizardProgress";
 import { KeywordForm } from "@/components/SEOWizard/KeywordForm";
 import { ArticleList } from "@/components/SEOWizard/ArticleList";
 import { AnalysisReport } from "@/components/SEOWizard/AnalysisReport";
+import { supabase } from "@/integrations/supabase/client";
 import type { Article, ArticleAnalysis, IdealStructure } from "@/types/seo";
+import { useToast } from "@/components/ui/use-toast";
 
 const TOTAL_STEPS = 7;
 
@@ -15,9 +17,8 @@ const Index = () => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [selectedArticles, setSelectedArticles] = useState<Article[]>([]);
   const [analyses, setAnalyses] = useState<ArticleAnalysis[]>([]);
-  const [idealStructure, setIdealStructure] = useState<IdealStructure | null>(
-    null
-  );
+  const [idealStructure, setIdealStructure] = useState<IdealStructure | null>(null);
+  const { toast } = useToast();
 
   const handleKeywordSubmit = async (data: {
     keyword: string;
@@ -35,45 +36,24 @@ const Index = () => {
   const handleArticleSelection = async (selected: Article[]) => {
     setSelectedArticles(selected);
     
-    // TODO: Implement real article analysis
-    // For now, using mock data for analysis
-    const mockAnalyses: ArticleAnalysis[] = selected.map((article) => ({
-      title: article.title,
-      url: article.url,
-      wordCount: 1500,
-      characterCount: 7500,
-      headingsCount: 8,
-      paragraphsCount: 12,
-      imagesCount: 3,
-      videosCount: 1,
-      externalLinksCount: 5,
-      metaTitle: article.title,
-      metaDescription: article.snippet,
-      keywords: ["seo", "search engine", "optimization"],
-      readabilityScore: 75,
-      headingStructure: [
-        { level: "h1", text: "Main Title" },
-        { level: "h2", text: "First Section" },
-        { level: "h3", text: "Subsection" },
-      ],
-    }));
+    try {
+      const { data, error } = await supabase.functions.invoke('analyze-articles', {
+        body: { urls: selected.map(article => article.url) }
+      });
 
-    const mockIdealStructure: IdealStructure = {
-      targetWordCount: 2000,
-      targetParagraphCount: 15,
-      targetImageCount: 4,
-      recommendedHeadingsCount: 10,
-      recommendedKeywords: ["seo", "optimization", "guide"],
-      suggestedHeadingStructure: [
-        { level: "h1", text: "Complete Guide to SEO" },
-        { level: "h2", text: "Understanding SEO Basics" },
-        { level: "h2", text: "Key Optimization Techniques" },
-      ],
-    };
+      if (error) throw error;
 
-    setAnalyses(mockAnalyses);
-    setIdealStructure(mockIdealStructure);
-    setCurrentStep(4);
+      setAnalyses(data.analyses);
+      setIdealStructure(data.idealStructure);
+      setCurrentStep(4);
+    } catch (error) {
+      console.error('Error analyzing articles:', error);
+      toast({
+        title: "Error",
+        description: "Failed to analyze the selected articles. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
