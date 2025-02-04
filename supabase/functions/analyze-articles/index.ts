@@ -85,15 +85,19 @@ async function extractArticleContent(url: string, html: string) {
   const document = dom.window.document;
   
   // Method 1: Try Readability
-  const reader = new Readability(document, {
-    charThreshold: 100,
-    classesToPreserve: ['article', 'post', 'content', 'entry'],
-  });
-  let article = reader.parse();
-  
-  if (article && isValidArticle(article)) {
-    console.log(`Successfully extracted article from ${url} using Readability`);
-    return article;
+  try {
+    const reader = new Readability(document, {
+      charThreshold: 100,
+      classesToPreserve: ['article', 'post', 'content', 'entry'],
+    });
+    let article = reader.parse();
+    
+    if (article && isValidArticle(article)) {
+      console.log(`Successfully extracted article from ${url} using Readability`);
+      return article;
+    }
+  } catch (error) {
+    console.error(`Readability failed for ${url}:`, error);
   }
   
   console.log(`Readability failed for ${url}, trying fallback methods...`);
@@ -116,83 +120,142 @@ async function extractArticleContent(url: string, html: string) {
     '.entry',
     '.blog-entry',
     '[itemprop="articleBody"]',
-    '.story-content'
+    '.story-content',
+    '#article-content',
+    '.article__content',
+    '.article-text',
+    '.post__content',
+    '.post-text',
+    '.story__content',
+    '.story-text',
+    '.content__main',
+    '.main__content',
+    '.article__body',
+    '.post__body',
+    '.story__body'
   ];
   
   for (const selector of selectors) {
-    const element = document.querySelector(selector);
-    if (element) {
-      // Create a new document to avoid modifying the original
-      const tempDoc = new JSDOM().window.document;
-      const tempDiv = tempDoc.createElement('div');
-      tempDiv.innerHTML = element.innerHTML;
-      
-      // Clean up unwanted elements
-      const unwantedSelectors = [
-        'nav',
-        'header',
-        'footer',
-        '.sidebar',
-        '.comments',
-        '.related-posts',
-        '.advertisement',
-        '.social-share',
-        '.newsletter',
-        '.author-bio',
-        '.widget',
-        '[role="complementary"]'
-      ];
-      
-      unwantedSelectors.forEach(sel => {
-        const elements = tempDiv.querySelectorAll(sel);
-        elements.forEach(el => el.remove());
-      });
-      
-      // Try Readability on cleaned content
-      const tempReader = new Readability(tempDoc);
-      article = tempReader.parse();
-      
-      if (article && isValidArticle(article)) {
-        console.log(`Successfully extracted article from ${url} using selector: ${selector}`);
-        return article;
+    try {
+      const element = document.querySelector(selector);
+      if (element) {
+        // Create a new document to avoid modifying the original
+        const tempDoc = new JSDOM().window.document;
+        const tempDiv = tempDoc.createElement('div');
+        tempDiv.innerHTML = element.innerHTML;
+        
+        // Clean up unwanted elements
+        const unwantedSelectors = [
+          'nav',
+          'header',
+          'footer',
+          '.sidebar',
+          '.comments',
+          '.related-posts',
+          '.advertisement',
+          '.social-share',
+          '.newsletter',
+          '.author-bio',
+          '.widget',
+          '[role="complementary"]',
+          '.popup',
+          '.modal',
+          '.cookie-notice',
+          '.subscription',
+          '.promotion',
+          '.cta',
+          '.call-to-action',
+          '.share-buttons',
+          '.social-buttons',
+          '.recommended-articles',
+          '.similar-posts',
+          '.trending',
+          '.popular-posts',
+          '.sidebar-content',
+          '.advertisement-content',
+          '.ad-container'
+        ];
+        
+        unwantedSelectors.forEach(sel => {
+          const elements = tempDiv.querySelectorAll(sel);
+          elements.forEach(el => el.remove());
+        });
+        
+        // Try Readability on cleaned content
+        const tempReader = new Readability(tempDoc);
+        const article = tempReader.parse();
+        
+        if (article && isValidArticle(article)) {
+          console.log(`Successfully extracted article from ${url} using selector: ${selector}`);
+          return article;
+        }
       }
+    } catch (error) {
+      console.error(`Error with selector ${selector} for ${url}:`, error);
+      continue;
     }
   }
   
   // Method 3: Try to find the largest text block
-  const textBlocks = Array.from(document.getElementsByTagName('*'))
-    .filter(el => {
-      const text = el.textContent?.trim() || '';
-      return text.length > 500 && // Minimum text length
-             text.split('.').length > 3 && // At least 3 sentences
-             el.querySelectorAll('p, h1, h2, h3, h4, h5, h6').length > 2; // Has paragraphs and headings
-    })
-    .map(el => ({
-      element: el,
-      textLength: el.textContent?.length || 0,
-      paragraphs: el.querySelectorAll('p').length,
-      headings: el.querySelectorAll('h1, h2, h3, h4, h5, h6').length
-    }))
-    .sort((a, b) => {
-      // Score based on text length and structure
-      const scoreA = a.textLength + (a.paragraphs * 100) + (a.headings * 200);
-      const scoreB = b.textLength + (b.paragraphs * 100) + (b.headings * 200);
-      return scoreB - scoreA;
-    });
-  
-  if (textBlocks.length > 0) {
-    const largestBlock = textBlocks[0];
-    const tempDoc = new JSDOM().window.document;
-    const tempDiv = tempDoc.createElement('div');
-    tempDiv.innerHTML = largestBlock.element.innerHTML;
+  try {
+    const textBlocks = Array.from(document.getElementsByTagName('*'))
+      .filter(el => {
+        const text = el.textContent?.trim() || '';
+        return text.length > 500 && // Minimum text length
+               text.split('.').length > 3 && // At least 3 sentences
+               el.querySelectorAll('p, h1, h2, h3, h4, h5, h6').length > 2; // Has paragraphs and headings
+      })
+      .map(el => ({
+        element: el,
+        textLength: el.textContent?.length || 0,
+        paragraphs: el.querySelectorAll('p').length,
+        headings: el.querySelectorAll('h1, h2, h3, h4, h5, h6').length
+      }))
+      .sort((a, b) => {
+        // Score based on text length and structure
+        const scoreA = a.textLength + (a.paragraphs * 100) + (a.headings * 200);
+        const scoreB = b.textLength + (b.paragraphs * 100) + (b.headings * 200);
+        return scoreB - scoreA;
+      });
     
-    const tempReader = new Readability(tempDoc);
-    article = tempReader.parse();
-    
-    if (article && isValidArticle(article)) {
-      console.log(`Successfully extracted article from ${url} using largest text block method`);
-      return article;
+    if (textBlocks.length > 0) {
+      const largestBlock = textBlocks[0];
+      const tempDoc = new JSDOM().window.document;
+      const tempDiv = tempDoc.createElement('div');
+      tempDiv.innerHTML = largestBlock.element.innerHTML;
+      
+      const tempReader = new Readability(tempDoc);
+      const article = tempReader.parse();
+      
+      if (article && isValidArticle(article)) {
+        console.log(`Successfully extracted article from ${url} using largest text block method`);
+        return article;
+      }
     }
+  } catch (error) {
+    console.error(`Error with largest text block method for ${url}:`, error);
+  }
+
+  // Method 4: Try to extract content from specific meta tags
+  try {
+    const articleContent = document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
+                          document.querySelector('meta[name="description"]')?.getAttribute('content');
+    
+    if (articleContent && articleContent.length > 200) {
+      const tempDoc = new JSDOM().window.document;
+      const tempDiv = tempDoc.createElement('div');
+      tempDiv.textContent = articleContent;
+      
+      return {
+        title: document.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
+               document.querySelector('title')?.textContent || '',
+        content: tempDiv.innerHTML,
+        textContent: articleContent,
+        length: articleContent.length
+      };
+    }
+  } catch (error) {
+    console.error(`Error with meta tags method for ${url}:`, error);
   }
   
   console.error(`Failed to extract valid article content from ${url} after all attempts`);
@@ -203,7 +266,12 @@ async function extractArticleContent(url: string, html: string) {
 async function analyzeArticle(url: string) {
   try {
     console.log(`Fetching content for ${url}`);
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    
     if (!response.ok) {
       console.error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
       return null;
@@ -214,11 +282,12 @@ async function analyzeArticle(url: string) {
     
     const article = await extractArticleContent(url, html);
     if (!article) {
+      console.error(`Failed to extract article content from ${url}`);
       return null;
     }
 
-    const contentDiv = document.createElement('div');
-    contentDiv.innerHTML = article.content;
+    const dom = new JSDOM(article.content);
+    const contentDiv = dom.window.document;
 
     const headings = Array.from(contentDiv.querySelectorAll('h1, h2, h3, h4, h5, h6'));
     const headingStructure = headings.map(heading => ({
@@ -245,9 +314,9 @@ async function analyzeArticle(url: string) {
     const textContent = article.textContent || '';
     const keyphrases = extractKeyphrases(textContent);
 
-    const metaDescription = document.querySelector('meta[name="description"]')?.getAttribute('content') || 
-                          document.querySelector('meta[property="og:description"]')?.getAttribute('content') || 
-                          '';
+    const metaDescription = dom.window.document.querySelector('meta[name="description"]')?.getAttribute('content') || 
+                           dom.window.document.querySelector('meta[property="og:description"]')?.getAttribute('content') || 
+                           '';
 
     console.log(`Analysis complete for ${url}`);
 
@@ -356,7 +425,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         error: error.message,
-        details: error.stack
+        details: error.stack,
+        failedUrls: []
       }),
       {
         status: 500,
