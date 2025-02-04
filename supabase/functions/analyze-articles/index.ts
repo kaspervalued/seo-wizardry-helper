@@ -1,10 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { corsHeaders } from "../_shared/cors.ts";
-import { extract } from "https://deno.land/x/article_extractor@v0.1.2/mod.ts";
+import { Readability } from "npm:@mozilla/readability";
+import { JSDOM } from "npm:jsdom";
 
-interface ArticleRequest {
-  urls: string[];
-}
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -12,73 +13,89 @@ serve(async (req) => {
   }
 
   try {
-    const { urls } = await req.json() as ArticleRequest;
+    const { urls } = await req.json();
+    console.log('Analyzing URLs:', urls);
     
     const analyses = await Promise.all(
       urls.map(async (url) => {
         try {
-          const article = await extract(url);
+          // Fetch the HTML content
+          const response = await fetch(url);
+          const html = await response.text();
+          
+          // Parse the HTML using JSDOM
+          const dom = new JSDOM(html);
+          const document = dom.window.document;
+          
+          // Use Readability to parse the main content
+          const reader = new Readability(document);
+          const article = reader.parse();
           
           if (!article) {
             throw new Error(`Failed to extract article from ${url}`);
           }
 
-          // Count headings in content
-          const headingsMatch = article.content?.match(/<h[1-6][^>]*>.*?<\/h[1-6]>/gi) || [];
-          const headingsCount = headingsMatch.length;
+          // Create a temporary div to parse HTML content
+          const contentDiv = document.createElement('div');
+          contentDiv.innerHTML = article.content;
 
-          // Extract heading structure
-          const headingStructure = headingsMatch.map(heading => {
-            const level = heading.match(/<h([1-6])/i)?.[1] || "1";
-            const text = heading.replace(/<[^>]+>/g, '').trim();
-            return { level: `h${level}`, text };
-          });
+          // Count headings
+          const headings = contentDiv.querySelectorAll('h1, h2, h3, h4, h5, h6');
+          const headingStructure = Array.from(headings).map(heading => ({
+            level: heading.tagName.toLowerCase(),
+            text: heading.textContent || ''
+          }));
 
           // Count paragraphs
-          const paragraphsCount = (article.content?.match(/<p[^>]*>.*?<\/p>/gi) || []).length;
-
-          // Count images
-          const imagesCount = (article.content?.match(/<img[^>]+>/gi) || []).length;
-
-          // Count videos (assuming common video embed patterns)
-          const videosCount = (article.content?.match(/<iframe[^>]*>(.*?)<\/iframe>/gi) || []).length;
-
-          // Count external links
-          const externalLinksCount = (article.content?.match(/<a[^>]+href=["']http[^>]+>/gi) || []).length;
-
-          // Extract text content without HTML tags for word and character count
-          const textContent = article.content?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '';
-
-          // Basic keyword extraction (get most frequent meaningful words)
-          const words = textContent.toLowerCase()
-            .split(/\W+/)
-            .filter(word => word.length > 3)
-            .filter(word => !['the', 'and', 'that', 'this', 'with', 'from'].includes(word));
+          const paragraphs = contentDiv.querySelectorAll('p');
           
+          // Count images
+          const images = contentDiv.querySelectorAll('img');
+          
+          // Count videos (common video embed patterns)
+          const videos = contentDiv.querySelectorAll('iframe[src*="youtube"], iframe[src*="vimeo"], video');
+          
+          // Count external links
+          const links = contentDiv.querySelectorAll('a[href^="http"]');
+
+          // Extract text content for word counting
+          const textContent = article.textContent || '';
+          const words = textContent.toLowerCase()
+            .split(/\s+/)
+            .filter(word => word.length > 3)
+            .filter(word => !['the', 'and', 'that', 'this', 'with', 'from', 'have', 'will'].includes(word));
+
+          // Calculate keyword frequency
           const wordFreq: Record<string, number> = {};
           words.forEach(word => {
             wordFreq[word] = (wordFreq[word] || 0) + 1;
           });
 
+          // Get top keywords
           const keywords = Object.entries(wordFreq)
             .sort(([,a], [,b]) => b - a)
-            .slice(0, 5)
+            .slice(0, 10)
             .map(([word]) => word);
+
+          // Get meta description
+          const metaDescription = document.querySelector('meta[name="description"]')?.getAttribute('content') || 
+                                document.querySelector('meta[property="og:description"]')?.getAttribute('content') || 
+                                '';
 
           return {
             title: article.title || "",
             url,
             wordCount: words.length,
             characterCount: textContent.length,
-            headingsCount,
-            paragraphsCount,
-            imagesCount,
-            videosCount,
-            externalLinksCount,
+            headingsCount: headings.length,
+            paragraphsCount: paragraphs.length,
+            imagesCount: images.length,
+            videosCount: videos.length,
+            externalLinksCount: links.length,
             metaTitle: article.title || "",
-            metaDescription: article.description || "",
+            metaDescription,
             keywords,
-            readabilityScore: 75, // This could be improved with actual readability calculation
+            readabilityScore: Math.round(article.length / words.length * 10), // Simple readability score
             headingStructure,
           };
         } catch (error) {
