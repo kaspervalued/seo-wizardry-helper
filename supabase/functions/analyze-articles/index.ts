@@ -1,3 +1,4 @@
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { Readability } from "npm:@mozilla/readability";
 import { JSDOM } from "npm:jsdom";
@@ -6,6 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
 const extractDomain = (url: string): string => {
   try {
@@ -150,25 +153,104 @@ async function analyzeArticle(url: string) {
   }
 }
 
+async function generateSuggestedContent(keyword: string, analyses: any[]) {
+  try {
+    // Prepare context from analyses
+    const topics = analyses.map(a => a.title).join('\n');
+    const keyPhrases = Array.from(
+      new Set(analyses.flatMap(a => a.keywords))
+    ).slice(0, 5).join(', ');
+
+    const prompt = `As an SEO expert, generate 3 titles and 3 meta descriptions for an article about "${keyword}".
+
+Context:
+- Main keyword: ${keyword}
+- Related topics from competitor articles:
+${topics}
+- Key phrases found: ${keyPhrases}
+
+Requirements for titles:
+- Keep the exact keyword "${keyword}" intact, don't split or modify it
+- Each title should be 50-60 characters
+- Start with action verbs
+- If the keyword contains "vs" or "versus", make it a comparison-focused title
+
+Requirements for descriptions:
+- Keep the exact keyword "${keyword}" intact, use it exactly once
+- Each description should be 110-160 characters
+- Match user search intent (if comparison keyword, focus on comparison aspects)
+- Be specific and actionable
+- Include a clear value proposition
+
+Format the response as JSON with arrays "titles" and "descriptions".`;
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are an SEO expert that generates optimized titles and descriptions.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = JSON.parse(data.choices[0].message.content);
+
+    return {
+      suggestedTitles: content.titles,
+      suggestedDescriptions: content.descriptions,
+      recommendedKeywords: Array.from(
+        new Set(analyses.flatMap(a => a.keywords))
+      ).slice(0, 5),
+    };
+  } catch (error) {
+    console.error('Error generating content with OpenAI:', error);
+    // Fallback to basic suggestions if AI fails
+    return {
+      suggestedTitles: [
+        `Compare ${keyword}: A Complete Analysis and Guide`,
+        `${keyword}: Which One Should You Choose?`,
+        `Understanding ${keyword}: Key Differences Explained`,
+      ],
+      suggestedDescriptions: [
+        `Explore the key differences between ${keyword}. Our comprehensive comparison helps you understand which solution best fits your needs.`,
+        `Looking to understand ${keyword}? Our detailed analysis breaks down the pros and cons to help you make an informed decision.`,
+        `Discover the essential differences between ${keyword}. Learn which option is best for your specific use case with our expert comparison.`,
+      ],
+      recommendedKeywords: Array.from(
+        new Set(analyses.flatMap(a => a.keywords))
+      ).slice(0, 5),
+    };
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { urls } = await req.json();
+    const { urls, keyword } = await req.json();
     console.log('Analyzing URLs:', urls);
     
-    // Process articles one at a time
     const results = [];
-    const failedUrls = [];
     
+    // Process one article at a time
     for (const url of urls) {
       const result = await analyzeArticle(url);
       if (result) {
         results.push(result);
-      } else {
-        failedUrls.push(url);
       }
       // Add a small delay between requests
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -189,27 +271,8 @@ serve(async (req) => {
       });
     });
 
-    // Generate suggested titles and descriptions based on analyzed content
-    const commonKeywords = Array.from(
-      new Set(results.flatMap(a => a.keywords))
-    ).slice(0, 5);
-
-    const suggestedTitles = [
-      `Master ${commonKeywords[0]}: A Complete Guide to ${commonKeywords[1]}`,
-      `Transform Your ${commonKeywords[0]} with Expert ${commonKeywords[1]} Tips`,
-      `Discover Essential ${commonKeywords[0]} Strategies for ${commonKeywords[1]}`,
-    ];
-
-    const suggestedDescriptions = [
-      `Learn everything you need to know about ${commonKeywords[0]}. This comprehensive guide covers ${commonKeywords[1]} and provides expert tips for success.`,
-      `Looking to improve your ${commonKeywords[0]}? Explore our expert guide on ${commonKeywords[1]} with practical strategies and proven techniques.`,
-      `Master the art of ${commonKeywords[0]} with our in-depth guide. Discover essential ${commonKeywords[1]} techniques and best practices.`,
-    ];
-
     const idealStructure = {
-      suggestedTitles,
-      suggestedDescriptions,
-      recommendedKeywords: commonKeywords,
+      ...(await generateSuggestedContent(keyword, results)),
       recommendedExternalLinks: Object.entries(linkFrequency)
         .map(([url, data]) => ({
           url,
@@ -225,7 +288,6 @@ serve(async (req) => {
       JSON.stringify({
         analyses: results,
         idealStructure,
-        failedUrls,
       }),
       {
         headers: {
@@ -239,8 +301,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         error: error.message,
-        details: error.stack,
-        failedUrls: []
+        details: error.stack
       }),
       {
         status: 500,
