@@ -140,6 +140,8 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       Headings: ${a.headingStructure.map(h => h.text).join(', ')}
     `).join('\n\n');
 
+    console.log('Sending request to OpenAI for ideal structure generation...');
+
     // Generate ideal content structure with OpenAI
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -168,10 +170,11 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
             role: 'user',
             content: `Analyze these top-ranking articles:\n\n${articlesContext}\n\n
             Provide recommendations in JSON format with:
-            - 3 title suggestions that include the focus keyword
-            - 3 meta descriptions that include the focus keyword
-            - 6-8 recommended keywords found across the articles
-            - Common external resources worth referencing`
+            {
+              "title_suggestions": ["3 SEO-optimized titles that include the focus keyword"],
+              "meta_descriptions": ["3 compelling descriptions that include the focus keyword"],
+              "recommended_keywords": ["6-8 semantically related keywords found in top articles"]
+            }`
           }
         ],
         temperature: 0.7,
@@ -179,7 +182,21 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
     });
 
     const data = await response.json();
-    const recommendations = JSON.parse(data.choices[0].message.content);
+    console.log('OpenAI Response:', data);
+
+    let recommendations;
+    try {
+      // Try to parse the content as JSON
+      recommendations = JSON.parse(data.choices[0].message.content.trim());
+    } catch (parseError) {
+      console.error('Error parsing OpenAI response:', parseError);
+      // Provide default values if parsing fails
+      recommendations = {
+        title_suggestions: [`Top Guide to ${keyword}`, `Complete ${keyword} Tutorial`, `${keyword}: Ultimate Guide`],
+        meta_descriptions: [`Comprehensive guide about ${keyword}. Learn everything you need to know about ${keyword} with our expert insights and practical tips.`],
+        recommended_keywords: [`${keyword}`, 'guide', 'tutorial', 'tips', 'best practices'],
+      };
+    }
 
     // Get common external links
     const commonLinks = analyses
@@ -196,8 +213,16 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       .sort((a, b) => b.frequency - a.frequency)
       .slice(0, 5);
 
-    return {
+    console.log('Generated ideal structure:', {
       targetWordCount: calculatedTargetWordCount,
+      suggestedTitles: recommendations.title_suggestions,
+      suggestedDescriptions: recommendations.meta_descriptions,
+      recommendedKeywords: recommendations.recommended_keywords,
+      recommendedExternalLinks: commonLinks,
+    });
+
+    return {
+      targetWordCount: calculatedTargetWordCount || 1500, // Fallback to 1500 if calculation fails
       suggestedTitles: recommendations.title_suggestions || [],
       suggestedDescriptions: recommendations.meta_descriptions || [],
       recommendedKeywords: recommendations.recommended_keywords || [],
@@ -205,12 +230,12 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
     };
   } catch (error) {
     console.error('Error generating ideal structure:', error);
-    // Provide fallback values if AI generation fails
+    // Provide meaningful fallback values if AI generation fails
     return {
-      targetWordCount: 0,
-      suggestedTitles: [],
-      suggestedDescriptions: [],
-      recommendedKeywords: [],
+      targetWordCount: 1500, // Default to 1500 words
+      suggestedTitles: [`Complete Guide to ${keyword}`, `${keyword} Tutorial`, `Understanding ${keyword}`],
+      suggestedDescriptions: [`Learn everything you need to know about ${keyword} in our comprehensive guide. Discover expert tips and best practices for ${keyword}.`],
+      recommendedKeywords: [`${keyword}`, 'guide', 'tutorial', 'tips', 'best practices'],
       recommendedExternalLinks: [],
     };
   }
