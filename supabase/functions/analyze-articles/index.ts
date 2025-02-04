@@ -78,7 +78,128 @@ const isValidArticle = (article: any): boolean => {
   );
 };
 
-// Helper function to fetch and analyze a single article
+// Add new fallback methods for article extraction
+async function extractArticleContent(url: string, html: string) {
+  console.log(`Attempting to extract content from ${url}`);
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+  
+  // Method 1: Try Readability
+  const reader = new Readability(document, {
+    charThreshold: 100,
+    classesToPreserve: ['article', 'post', 'content', 'entry'],
+  });
+  let article = reader.parse();
+  
+  if (article && isValidArticle(article)) {
+    console.log(`Successfully extracted article from ${url} using Readability`);
+    return article;
+  }
+  
+  console.log(`Readability failed for ${url}, trying fallback methods...`);
+  
+  // Method 2: Try common article selectors
+  const selectors = [
+    'article',
+    '[role="article"]',
+    '.post-content',
+    '.article-content',
+    '.entry-content',
+    '#main-content',
+    '.main-content',
+    'main',
+    '.content',
+    '.post',
+    '.blog-post',
+    '.article-body',
+    '.post-body',
+    '.entry',
+    '.blog-entry',
+    '[itemprop="articleBody"]',
+    '.story-content'
+  ];
+  
+  for (const selector of selectors) {
+    const element = document.querySelector(selector);
+    if (element) {
+      // Create a new document to avoid modifying the original
+      const tempDoc = new JSDOM().window.document;
+      const tempDiv = tempDoc.createElement('div');
+      tempDiv.innerHTML = element.innerHTML;
+      
+      // Clean up unwanted elements
+      const unwantedSelectors = [
+        'nav',
+        'header',
+        'footer',
+        '.sidebar',
+        '.comments',
+        '.related-posts',
+        '.advertisement',
+        '.social-share',
+        '.newsletter',
+        '.author-bio',
+        '.widget',
+        '[role="complementary"]'
+      ];
+      
+      unwantedSelectors.forEach(sel => {
+        const elements = tempDiv.querySelectorAll(sel);
+        elements.forEach(el => el.remove());
+      });
+      
+      // Try Readability on cleaned content
+      const tempReader = new Readability(tempDoc);
+      article = tempReader.parse();
+      
+      if (article && isValidArticle(article)) {
+        console.log(`Successfully extracted article from ${url} using selector: ${selector}`);
+        return article;
+      }
+    }
+  }
+  
+  // Method 3: Try to find the largest text block
+  const textBlocks = Array.from(document.getElementsByTagName('*'))
+    .filter(el => {
+      const text = el.textContent?.trim() || '';
+      return text.length > 500 && // Minimum text length
+             text.split('.').length > 3 && // At least 3 sentences
+             el.querySelectorAll('p, h1, h2, h3, h4, h5, h6').length > 2; // Has paragraphs and headings
+    })
+    .map(el => ({
+      element: el,
+      textLength: el.textContent?.length || 0,
+      paragraphs: el.querySelectorAll('p').length,
+      headings: el.querySelectorAll('h1, h2, h3, h4, h5, h6').length
+    }))
+    .sort((a, b) => {
+      // Score based on text length and structure
+      const scoreA = a.textLength + (a.paragraphs * 100) + (a.headings * 200);
+      const scoreB = b.textLength + (b.paragraphs * 100) + (b.headings * 200);
+      return scoreB - scoreA;
+    });
+  
+  if (textBlocks.length > 0) {
+    const largestBlock = textBlocks[0];
+    const tempDoc = new JSDOM().window.document;
+    const tempDiv = tempDoc.createElement('div');
+    tempDiv.innerHTML = largestBlock.element.innerHTML;
+    
+    const tempReader = new Readability(tempDoc);
+    article = tempReader.parse();
+    
+    if (article && isValidArticle(article)) {
+      console.log(`Successfully extracted article from ${url} using largest text block method`);
+      return article;
+    }
+  }
+  
+  console.error(`Failed to extract valid article content from ${url} after all attempts`);
+  return null;
+}
+
+// Update the analyzeArticle function to use the new extraction method
 async function analyzeArticle(url: string) {
   try {
     console.log(`Fetching content for ${url}`);
@@ -91,49 +212,8 @@ async function analyzeArticle(url: string) {
     const html = await response.text();
     console.log(`Successfully fetched HTML for ${url}, length: ${html.length}`);
     
-    const dom = new JSDOM(html);
-    const document = dom.window.document;
-    
-    const reader = new Readability(document, {
-      charThreshold: 100,
-      classesToPreserve: ['article', 'post', 'content', 'entry'],
-    });
-    let article = reader.parse();
-    
-    if (!article || !isValidArticle(article)) {
-      console.log(`Readability failed for ${url}, trying fallback methods...`);
-      
-      const selectors = [
-        'article',
-        '[role="article"]',
-        '.post-content',
-        '.article-content',
-        '.entry-content',
-        '#main-content',
-        '.main-content',
-        'main'
-      ];
-      
-      for (const selector of selectors) {
-        const element = document.querySelector(selector);
-        if (element) {
-          const tempDoc = new JSDOM().window.document;
-          const tempDiv = tempDoc.createElement('div');
-          tempDiv.innerHTML = element.innerHTML;
-          
-          const tempReader = new Readability(tempDoc);
-          article = tempReader.parse();
-          
-          if (article && isValidArticle(article)) {
-            console.log(`Successfully extracted article from ${url} using selector: ${selector}`);
-            break;
-          }
-        }
-      }
-    }
-    
-    if (!article || !isValidArticle(article)) {
-      console.error(`Failed to extract valid article content from ${url} after all attempts`);
+    const article = await extractArticleContent(url, html);
+    if (!article) {
       return null;
     }
 

@@ -20,14 +20,6 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
       if (isSelected) {
         return prev.filter((a) => a.url !== article.url);
       }
-      if (prev.length >= 5) {
-        toast({
-          title: "Maximum Selection Reached",
-          description: "You can select up to 5 articles",
-          variant: "destructive",
-        });
-        return prev;
-      }
       return [...prev, article];
     });
   };
@@ -83,7 +75,7 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
 
       <div className="flex justify-between items-center">
         <p className="text-sm text-gray-500">
-          {selectedArticles.length}/5 articles selected
+          {selectedArticles.length} articles selected
         </p>
         <Button onClick={handleSubmit}>Analyze Selected Articles</Button>
       </div>
