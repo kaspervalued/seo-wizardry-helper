@@ -85,6 +85,101 @@ const isValidArticle = (article: any): boolean => {
   );
 };
 
+// Helper function to fetch and analyze a single article
+async function analyzeArticle(url: string) {
+  try {
+    console.log(`Fetching content for ${url}`);
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+    }
+    const html = await response.text();
+    
+    // Parse the HTML using JSDOM
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+    
+    // Use Readability to parse the main content
+    const reader = new Readability(document, {
+      charThreshold: 100,
+      classesToPreserve: ['article', 'post', 'content', 'entry'],
+    });
+    const article = reader.parse();
+    
+    if (!article || !isValidArticle(article)) {
+      throw new Error(`Failed to extract valid article content from ${url}`);
+    }
+
+    console.log(`Successfully extracted article from ${url}`);
+
+    // Create a temporary div to parse HTML content
+    const contentDiv = document.createElement('div');
+    contentDiv.innerHTML = article.content;
+
+    // Count headings with their levels
+    const headings = Array.from(contentDiv.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+    const headingStructure = headings.map(heading => ({
+      level: heading.tagName.toLowerCase(),
+      text: heading.textContent?.trim() || ''
+    }));
+
+    // Count paragraphs
+    const paragraphs = contentDiv.querySelectorAll('p');
+    
+    // Count images
+    const images = contentDiv.querySelectorAll('img');
+    
+    // Count videos (common video embed patterns)
+    const videos = contentDiv.querySelectorAll(
+      'iframe[src*="youtube"], iframe[src*="youtu.be"], ' +
+      'iframe[src*="vimeo"], video, ' +
+      'div[class*="video"], div[id*="video"]'
+    );
+    
+    // Extract and analyze external links
+    const links = Array.from(contentDiv.querySelectorAll('a[href^="http"]'))
+      .map(link => ({
+        url: link.getAttribute('href') || '',
+        text: link.textContent?.trim() || '',
+        domain: extractDomain(link.getAttribute('href') || '')
+      }))
+      .filter(link => link.domain !== extractDomain(url)); // Filter out internal links
+
+    // Extract text content for word counting and phrase analysis
+    const textContent = article.textContent || '';
+    const keyphrases = extractKeyphrases(textContent);
+
+    // Get meta description
+    const metaDescription = document.querySelector('meta[name="description"]')?.getAttribute('content') || 
+                          document.querySelector('meta[property="og:description"]')?.getAttribute('content') || 
+                          '';
+
+    console.log(`Analysis complete for ${url}`);
+
+    return {
+      title: article.title || "",
+      url,
+      domain: extractDomain(url),
+      wordCount: textContent.split(/\s+/).length,
+      characterCount: textContent.length,
+      headingsCount: headings.length,
+      paragraphsCount: paragraphs.length,
+      imagesCount: images.length,
+      videosCount: videos.length,
+      externalLinks: links,
+      externalLinksCount: links.length,
+      metaTitle: article.title || "",
+      metaDescription,
+      keywords: keyphrases,
+      readabilityScore: Math.round(article.length / textContent.split(/\s+/).length * 10),
+      headingStructure,
+    };
+  } catch (error) {
+    console.error(`Error analyzing article ${url}:`, error);
+    return null;
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -95,130 +190,30 @@ serve(async (req) => {
     const { urls } = await req.json();
     console.log('Analyzing URLs:', urls);
     
-    const analyses = await Promise.all(
-      urls.map(async (url) => {
-        try {
-          console.log(`Fetching content for ${url}`);
-          const response = await fetch(url);
-          if (!response.ok) {
-            throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
-          }
-          const html = await response.text();
-          
-          // Parse the HTML using JSDOM
-          const dom = new JSDOM(html);
-          const document = dom.window.document;
-          
-          // Use Readability to parse the main content
-          const reader = new Readability(document, {
-            charThreshold: 100,
-            classesToPreserve: ['article', 'post', 'content', 'entry'],
-          });
-          const article = reader.parse();
-          
-          if (!article || !isValidArticle(article)) {
-            throw new Error(`Failed to extract valid article content from ${url}`);
-          }
+    // Process articles in batches of 3 to avoid memory issues
+    const batchSize = 3;
+    const results = [];
+    
+    for (let i = 0; i < urls.length; i += batchSize) {
+      const batch = urls.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map(url => analyzeArticle(url))
+      );
+      results.push(...batchResults.filter(result => result !== null));
+      
+      // Add a small delay between batches to prevent resource exhaustion
+      if (i + batchSize < urls.length) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
 
-          console.log(`Successfully extracted article from ${url}`);
-
-          // Create a temporary div to parse HTML content
-          const contentDiv = document.createElement('div');
-          contentDiv.innerHTML = article.content;
-
-          // Count headings with their levels
-          const headings = Array.from(contentDiv.querySelectorAll('h1, h2, h3, h4, h5, h6'));
-          const headingStructure = headings.map(heading => ({
-            level: heading.tagName.toLowerCase(),
-            text: heading.textContent?.trim() || ''
-          }));
-
-          // Count paragraphs
-          const paragraphs = contentDiv.querySelectorAll('p');
-          
-          // Count images
-          const images = contentDiv.querySelectorAll('img');
-          
-          // Count videos (common video embed patterns)
-          const videos = contentDiv.querySelectorAll(
-            'iframe[src*="youtube"], iframe[src*="youtu.be"], ' +
-            'iframe[src*="vimeo"], video, ' +
-            'div[class*="video"], div[id*="video"]'
-          );
-          
-          // Extract and analyze external links
-          const links = Array.from(contentDiv.querySelectorAll('a[href^="http"]'))
-            .map(link => ({
-              url: link.getAttribute('href') || '',
-              text: link.textContent?.trim() || '',
-              domain: extractDomain(link.getAttribute('href') || '')
-            }))
-            .filter(link => link.domain !== extractDomain(url)); // Filter out internal links
-
-          // Extract text content for word counting and phrase analysis
-          const textContent = article.textContent || '';
-          const keyphrases = extractKeyphrases(textContent);
-
-          // Get meta description
-          const metaDescription = document.querySelector('meta[name="description"]')?.getAttribute('content') || 
-                                document.querySelector('meta[property="og:description"]')?.getAttribute('content') || 
-                                '';
-
-          console.log(`Analysis complete for ${url}`);
-
-          return {
-            title: article.title || "",
-            url,
-            domain: extractDomain(url),
-            wordCount: textContent.split(/\s+/).length,
-            characterCount: textContent.length,
-            headingsCount: headings.length,
-            paragraphsCount: paragraphs.length,
-            imagesCount: images.length,
-            videosCount: videos.length,
-            externalLinks: links,
-            externalLinksCount: links.length,
-            metaTitle: article.title || "",
-            metaDescription,
-            keywords: keyphrases,
-            readabilityScore: Math.round(article.length / textContent.split(/\s+/).length * 10),
-            headingStructure,
-          };
-        } catch (error) {
-          console.error(`Error analyzing article ${url}:`, error);
-          return {
-            title: url,
-            url,
-            domain: extractDomain(url),
-            wordCount: 0,
-            characterCount: 0,
-            headingsCount: 0,
-            paragraphsCount: 0,
-            imagesCount: 0,
-            videosCount: 0,
-            externalLinks: [],
-            externalLinksCount: 0,
-            metaTitle: "",
-            metaDescription: "",
-            keywords: [],
-            readabilityScore: 0,
-            headingStructure: [],
-            error: error.message
-          };
-        }
-      })
-    );
-
-    // Filter out failed analyses
-    const validAnalyses = analyses.filter(analysis => !analysis.error);
-
-    if (validAnalyses.length === 0) {
+    if (results.length === 0) {
       throw new Error('Failed to analyze any of the provided articles');
     }
 
     // Find common external links across articles
     const linkFrequency: { [key: string]: { count: number; text: string; domain: string } } = {};
-    validAnalyses.forEach(analysis => {
+    results.forEach(analysis => {
       analysis.externalLinks.forEach(link => {
         if (!linkFrequency[link.url]) {
           linkFrequency[link.url] = { count: 0, text: link.text, domain: link.domain };
@@ -230,21 +225,21 @@ serve(async (req) => {
     // Generate ideal structure based on the analyses
     const idealStructure = {
       targetWordCount: Math.round(
-        validAnalyses.reduce((sum, a) => sum + a.wordCount, 0) / validAnalyses.length
+        results.reduce((sum, a) => sum + a.wordCount, 0) / results.length
       ),
       targetParagraphCount: Math.round(
-        validAnalyses.reduce((sum, a) => sum + a.paragraphsCount, 0) / validAnalyses.length
+        results.reduce((sum, a) => sum + a.paragraphsCount, 0) / results.length
       ),
       targetImageCount: Math.round(
-        validAnalyses.reduce((sum, a) => sum + a.imagesCount, 0) / validAnalyses.length
+        results.reduce((sum, a) => sum + a.imagesCount, 0) / results.length
       ),
       recommendedHeadingsCount: Math.round(
-        validAnalyses.reduce((sum, a) => sum + a.headingsCount, 0) / validAnalyses.length
+        results.reduce((sum, a) => sum + a.headingsCount, 0) / results.length
       ),
       recommendedKeywords: Array.from(
-        new Set(validAnalyses.flatMap(a => a.keywords))
+        new Set(results.flatMap(a => a.keywords))
       ).slice(0, 10),
-      suggestedHeadingStructure: validAnalyses[0].headingStructure,
+      suggestedHeadingStructure: results[0].headingStructure,
       recommendedExternalLinks: Object.entries(linkFrequency)
         .filter(([, data]) => data.count > 1) // Only include links that appear in multiple articles
         .map(([url, data]) => ({
@@ -259,7 +254,7 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        analyses: validAnalyses,
+        analyses: results,
         idealStructure,
       }),
       {
