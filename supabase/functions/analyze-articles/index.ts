@@ -123,7 +123,7 @@ async function analyzeArticle(url: string) {
 
 async function generateIdealStructure(analyses: any[], keyword: string) {
   try {
-    // Calculate target word count
+    // Calculate target word count from analyses
     const validWordCounts = analyses
       .map(a => a.wordCount)
       .filter(count => count > 0);
@@ -132,12 +132,16 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       validWordCounts.reduce((sum, count) => sum + count, 0) / validWordCounts.length
     );
 
-    // Collect all keywords from analyses for context
-    const allKeywords = analyses.flatMap(a => a.keywords);
-    const keywordContext = allKeywords.join('\n');
+    // Prepare context from analyses
+    const articlesContext = analyses.map(a => `
+      Title: ${a.title}
+      Key phrases: ${a.keywords.join(', ')}
+      Word count: ${a.wordCount}
+      Headings: ${a.headingStructure.map(h => h.text).join(', ')}
+    `).join('\n\n');
 
-    // Generate titles and descriptions with OpenAI
-    const titleResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Generate ideal content structure with OpenAI
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openAIApiKey}`,
@@ -148,99 +152,62 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
         messages: [
           {
             role: 'system',
-            content: `You are an SEO expert that generates optimized titles and descriptions.
-            Requirements for titles:
-            - Keep the exact keyword "${keyword}" intact, don't split or modify it
-            - Each title should be 50-60 characters
-            - If the keyword contains "vs" or "versus", make it a comparison-focused title
+            content: `You are an SEO content expert that analyzes top-ranking articles and provides comprehensive content recommendations. Focus on:
+            - Search intent and user value
+            - Key topics covered across articles
+            - Content depth and comprehensiveness
+            - Optimal content structure for readability
             
-            Requirements for descriptions:
-            - Keep the exact keyword "${keyword}" intact, use it exactly once
-            - Each description should be 150-160 characters
-            - Match user search intent (if comparison keyword, focus on comparison aspects)
-            - Be specific and actionable`
+            When suggesting titles and descriptions:
+            - Keep the exact keyword "${keyword}" intact, don't split or modify it
+            - If the keyword contains "vs" or "versus", make it a comparison-focused piece
+            - Titles should be 50-60 characters
+            - Descriptions should be 150-160 characters`
           },
           {
             role: 'user',
-            content: `Generate 3 SEO-optimized titles and descriptions for an article about "${keyword}".
-            
-            Context:
-            - Main keyword: ${keyword}
-            - Related key phrases: ${keywordContext}
-            - Target word count: ${targetWordCount} words
-            
-            Format the response as JSON with arrays "titles" and "descriptions".`
+            content: `Analyze these top-ranking articles for the keyword "${keyword}":\n\n${articlesContext}\n\n
+            Provide recommendations in JSON format with:
+            - 3 title suggestions that include the focus keyword
+            - 3 meta descriptions that include the focus keyword
+            - 6-8 recommended keywords found across the articles
+            - Common external resources worth referencing`
           }
         ],
         temperature: 0.7,
       }),
     });
 
-    const titleData = await titleResponse.json();
-    const { titles: suggestedTitles, descriptions: suggestedDescriptions } = JSON.parse(
-      titleData.choices[0].message.content
-    );
+    const data = await response.json();
+    const recommendations = JSON.parse(data.choices[0].message.content);
 
-    // Generate recommended keywords with OpenAI
-    const keywordResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `You are an SEO expert that analyzes key phrases and synthesizes them into recommended keywords.
-            Focus on specific, meaningful phrases that are most relevant to the main topic.
-            If the main keyword contains "vs" or "versus", ensure recommendations include comparison-related terms.
-            Avoid generic words and ensure all recommendations are highly specific to the topic.`
-          },
-          {
-            role: 'user',
-            content: `Main keyword: "${keyword}"
-            
-            Here are the key phrases found in competitor articles:
-            ${keywordContext}
-            
-            Analyze these key phrases and provide 5-7 most important recommended keywords that should be included in a new article about "${keyword}". Focus on specific, technical terms and important concepts.`
-          }
-        ],
-        temperature: 0.3,
-      }),
-    });
-
-    const keywordData = await keywordResponse.json();
-    const recommendedKeywords = keywordData.choices[0].message.content
-      .split('\n')
-      .map(phrase => phrase.replace(/^[-\d.\s]+/, '').trim())
-      .filter(Boolean);
+    // Get common external links
+    const commonLinks = analyses
+      .flatMap(a => a.externalLinks)
+      .reduce((acc: any[], link) => {
+        const existing = acc.find(l => l.url === link.url);
+        if (existing) {
+          existing.frequency++;
+        } else {
+          acc.push({ ...link, frequency: 1 });
+        }
+        return acc;
+      }, [])
+      .sort((a, b) => b.frequency - a.frequency)
+      .slice(0, 5);
 
     return {
       targetWordCount,
-      suggestedTitles,
-      suggestedDescriptions,
-      recommendedKeywords,
-      recommendedExternalLinks: analyses
-        .flatMap(a => a.externalLinks)
-        .reduce((acc: any[], link) => {
-          const existing = acc.find(l => l.url === link.url);
-          if (existing) {
-            existing.frequency++;
-          } else {
-            acc.push({ ...link, frequency: 1 });
-          }
-          return acc;
-        }, [])
-        .sort((a, b) => b.frequency - a.frequency)
-        .slice(0, 5),
+      suggestedTitles: recommendations.title_suggestions || [],
+      suggestedDescriptions: recommendations.meta_descriptions || [],
+      recommendedKeywords: recommendations.recommended_keywords || [],
+      recommendedExternalLinks: commonLinks,
     };
   } catch (error) {
     console.error('Error generating ideal structure:', error);
+    // Provide fallback values if AI generation fails
     return {
-      targetWordCount: 0,
+      targetWordCount,
       suggestedTitles: [],
       suggestedDescriptions: [],
       recommendedKeywords: [],

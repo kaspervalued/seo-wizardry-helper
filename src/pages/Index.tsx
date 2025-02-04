@@ -43,11 +43,11 @@ const Index = () => {
     setCurrentStep(3);
     
     try {
-      setAnalysisStatus("Fetching article contents...");
+      setAnalysisStatus("Fetching article contents... (This might take 1-2 minutes)\nDon't close this tab, we're analyzing everything in detail!");
       const { data, error } = await supabase.functions.invoke('analyze-articles', {
         body: { 
           urls: selected.map(article => article.url),
-          keyword: keyword // Pass the keyword for better context
+          keyword: keyword
         }
       });
 
@@ -83,7 +83,7 @@ const Index = () => {
           </div>
         </div>
         <div className="pl-12">
-          <p className="text-sm text-muted-foreground">{analysisStatus}</p>
+          <p className="text-sm text-muted-foreground whitespace-pre-line">{analysisStatus}</p>
           <div className="mt-4 space-y-2">
             {[1, 2, 3].map((i) => (
               <div key={i} className="space-y-2">
