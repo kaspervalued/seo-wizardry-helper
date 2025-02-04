@@ -1,6 +1,5 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { JSDOM } from "npm:jsdom";
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
@@ -20,6 +19,9 @@ const extractDomain = (url: string): string => {
 
 async function extractKeyPhrasesWithAI(content: string, keyword: string): Promise<string[]> {
   try {
+    // Add delay to prevent rate limiting
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -31,11 +33,11 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
         messages: [
           {
             role: 'system',
-            content: `You are an SEO expert that extracts key phrases from content. Extract 5-7 specific, meaningful key phrases that best represent the main topics and concepts in the text. Focus on technical terms, industry-specific phrases, and important concepts related to "${keyword}". Avoid generic words.`
+            content: `Extract 5-7 specific key phrases from the content related to "${keyword}". Focus on technical terms and industry-specific phrases.`
           },
           {
             role: 'user',
-            content: `Extract key phrases from this content:\n\n${content}`
+            content: content.substring(0, 4000) // Limit content length
           }
         ],
         temperature: 0.3,
@@ -75,8 +77,9 @@ async function analyzeArticle(url: string) {
     const title = document.title || '';
     const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content') || '';
     
+    // Limit content extraction to main content areas
     const mainContent = document.querySelector('main, article, [role="main"], #content, .content');
-    const textContent = mainContent?.textContent || document.body.textContent || '';
+    const textContent = (mainContent?.textContent || document.body.textContent || '').substring(0, 8000); // Limit content length
     
     const wordCount = textContent.split(/\s+/).length;
     const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
@@ -84,6 +87,7 @@ async function analyzeArticle(url: string) {
     const images = document.querySelectorAll('img');
     const videos = document.querySelectorAll('video, iframe[src*="youtube"], iframe[src*="vimeo"]');
     const links = Array.from(document.querySelectorAll('a[href^="http"]'))
+      .slice(0, 20) // Limit number of links
       .map(link => ({
         url: link.getAttribute('href') || '',
         text: link.textContent?.trim() || '',
@@ -91,9 +95,11 @@ async function analyzeArticle(url: string) {
       }))
       .filter(link => link.domain !== extractDomain(url));
 
+    // Add delay before AI processing
+    await new Promise(resolve => setTimeout(resolve, 1000));
     const keywords = await extractKeyPhrasesWithAI(textContent, title);
 
-    const headingStructure = Array.from(headings).map(heading => ({
+    const headingStructure = Array.from(headings).slice(0, 15).map(heading => ({
       level: heading.tagName.toLowerCase(),
       text: heading.textContent?.trim() || ''
     }));
@@ -123,7 +129,6 @@ async function analyzeArticle(url: string) {
 
 async function generateIdealStructure(analyses: any[], keyword: string) {
   try {
-    // Calculate target word count from analyses
     const validWordCounts = analyses
       .map(a => a.wordCount)
       .filter(count => count > 0);
@@ -132,17 +137,16 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       validWordCounts.reduce((sum, count) => sum + count, 0) / validWordCounts.length
     );
 
-    // Prepare context from analyses
+    // Prepare concise context from analyses
     const articlesContext = analyses.map(a => `
       Title: ${a.title}
-      Key phrases: ${a.keywords.join(', ')}
-      Word count: ${a.wordCount}
-      Headings: ${a.headingStructure.map(h => h.text).join(', ')}
-    `).join('\n\n');
+      Key phrases: ${a.keywords.slice(0, 5).join(', ')}
+    `).join('\n');
 
-    console.log('Sending request to OpenAI for ideal structure generation...');
+    // Add delay before AI call
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // Generate ideal content structure with OpenAI
+    console.log('Generating ideal structure...');
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -154,26 +158,16 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
         messages: [
           {
             role: 'system',
-            content: `As an SEO content expert, analyze these top-ranking articles for the keyword "${keyword}". Consider:
-            - Search intent and user value
-            - Key topics covered across articles
-            - Content depth and comprehensiveness
-            - Optimal content structure for readability
-            
-            When suggesting titles and descriptions:
-            - Keep the exact keyword "${keyword}" intact, don't split or modify it
-            - If the keyword contains "vs" or "versus", make it a comparison-focused piece
-            - Titles should be 50-60 characters
-            - Descriptions should be 150-160 characters`
+            content: `As an SEO expert, analyze these articles and provide recommendations for the keyword "${keyword}".`
           },
           {
             role: 'user',
-            content: `Analyze these top-ranking articles:\n\n${articlesContext}\n\n
-            Provide recommendations in JSON format with:
+            content: `Based on these articles:\n${articlesContext}\n
+            Provide a JSON response with:
             {
-              "title_suggestions": ["3 SEO-optimized titles that include the focus keyword"],
-              "meta_descriptions": ["3 compelling descriptions that include the focus keyword"],
-              "recommended_keywords": ["6-8 semantically related keywords found in top articles"]
+              "title_suggestions": ["3 SEO titles with keyword"],
+              "meta_descriptions": ["3 meta descriptions with keyword"],
+              "recommended_keywords": ["6-8 key phrases from articles"]
             }`
           }
         ],
@@ -182,47 +176,36 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
     });
 
     const data = await response.json();
-    console.log('OpenAI Response:', data);
+    console.log('Received AI response');
 
     let recommendations;
     try {
-      // Try to parse the content as JSON
       recommendations = JSON.parse(data.choices[0].message.content.trim());
     } catch (parseError) {
       console.error('Error parsing OpenAI response:', parseError);
-      // Provide default values if parsing fails
       recommendations = {
-        title_suggestions: [`Top Guide to ${keyword}`, `Complete ${keyword} Tutorial`, `${keyword}: Ultimate Guide`],
-        meta_descriptions: [`Comprehensive guide about ${keyword}. Learn everything you need to know about ${keyword} with our expert insights and practical tips.`],
-        recommended_keywords: [`${keyword}`, 'guide', 'tutorial', 'tips', 'best practices'],
+        title_suggestions: [`Complete Guide to ${keyword}`, `${keyword} Tutorial`, `Understanding ${keyword}`],
+        meta_descriptions: [`Learn everything about ${keyword} in our comprehensive guide.`],
+        recommended_keywords: [keyword, 'guide', 'tutorial', 'tips'],
       };
     }
 
-    // Get common external links
+    // Get common external links (limited)
     const commonLinks = analyses
-      .flatMap(a => a.externalLinks)
+      .flatMap(a => a.externalLinks.slice(0, 5))
       .reduce((acc: any[], link) => {
         const existing = acc.find(l => l.url === link.url);
         if (existing) {
           existing.frequency++;
-        } else {
+        } else if (acc.length < 5) {
           acc.push({ ...link, frequency: 1 });
         }
         return acc;
       }, [])
-      .sort((a, b) => b.frequency - a.frequency)
-      .slice(0, 5);
-
-    console.log('Generated ideal structure:', {
-      targetWordCount: calculatedTargetWordCount,
-      suggestedTitles: recommendations.title_suggestions,
-      suggestedDescriptions: recommendations.meta_descriptions,
-      recommendedKeywords: recommendations.recommended_keywords,
-      recommendedExternalLinks: commonLinks,
-    });
+      .sort((a, b) => b.frequency - a.frequency);
 
     return {
-      targetWordCount: calculatedTargetWordCount || 1500, // Fallback to 1500 if calculation fails
+      targetWordCount: calculatedTargetWordCount || 1500,
       suggestedTitles: recommendations.title_suggestions || [],
       suggestedDescriptions: recommendations.meta_descriptions || [],
       recommendedKeywords: recommendations.recommended_keywords || [],
@@ -230,12 +213,11 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
     };
   } catch (error) {
     console.error('Error generating ideal structure:', error);
-    // Provide meaningful fallback values if AI generation fails
     return {
-      targetWordCount: 1500, // Default to 1500 words
-      suggestedTitles: [`Complete Guide to ${keyword}`, `${keyword} Tutorial`, `Understanding ${keyword}`],
-      suggestedDescriptions: [`Learn everything you need to know about ${keyword} in our comprehensive guide. Discover expert tips and best practices for ${keyword}.`],
-      recommendedKeywords: [`${keyword}`, 'guide', 'tutorial', 'tips', 'best practices'],
+      targetWordCount: 1500,
+      suggestedTitles: [`Complete Guide to ${keyword}`, `${keyword} Tutorial`],
+      suggestedDescriptions: [`Learn everything about ${keyword} in our guide.`],
+      recommendedKeywords: [keyword, 'guide', 'tutorial'],
       recommendedExternalLinks: [],
     };
   }
@@ -248,22 +230,21 @@ serve(async (req) => {
 
   try {
     const { urls, keyword } = await req.json();
-    console.log('Analyzing URLs:', urls);
+    console.log('Starting analysis for URLs:', urls);
     
     const results = [];
     
-    // Process one article at a time
+    // Process one article at a time with delay
     for (const url of urls) {
       const result = await analyzeArticle(url);
       if (result) {
         results.push(result);
       }
-      // Add a small delay between requests
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
     if (results.length === 0) {
-      throw new Error('Failed to analyze any of the provided articles');
+      throw new Error('Failed to analyze any articles');
     }
 
     const idealStructure = await generateIdealStructure(results, keyword);
