@@ -128,7 +128,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       .map(a => a.wordCount)
       .filter(count => count > 0);
     
-    const targetWordCount = Math.round(
+    const calculatedTargetWordCount = Math.round(
       validWordCounts.reduce((sum, count) => sum + count, 0) / validWordCounts.length
     );
 
@@ -152,7 +152,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
         messages: [
           {
             role: 'system',
-            content: `You are an SEO content expert that analyzes top-ranking articles and provides comprehensive content recommendations. Focus on:
+            content: `As an SEO content expert, analyze these top-ranking articles for the keyword "${keyword}". Consider:
             - Search intent and user value
             - Key topics covered across articles
             - Content depth and comprehensiveness
@@ -166,7 +166,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
           },
           {
             role: 'user',
-            content: `Analyze these top-ranking articles for the keyword "${keyword}":\n\n${articlesContext}\n\n
+            content: `Analyze these top-ranking articles:\n\n${articlesContext}\n\n
             Provide recommendations in JSON format with:
             - 3 title suggestions that include the focus keyword
             - 3 meta descriptions that include the focus keyword
@@ -197,7 +197,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       .slice(0, 5);
 
     return {
-      targetWordCount,
+      targetWordCount: calculatedTargetWordCount,
       suggestedTitles: recommendations.title_suggestions || [],
       suggestedDescriptions: recommendations.meta_descriptions || [],
       recommendedKeywords: recommendations.recommended_keywords || [],
@@ -207,7 +207,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
     console.error('Error generating ideal structure:', error);
     // Provide fallback values if AI generation fails
     return {
-      targetWordCount,
+      targetWordCount: 0,
       suggestedTitles: [],
       suggestedDescriptions: [],
       recommendedKeywords: [],
