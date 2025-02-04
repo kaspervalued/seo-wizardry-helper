@@ -38,6 +38,7 @@ export interface ArticleAnalysis {
 }
 
 export interface IdealStructure {
+  targetWordCount: number;
   recommendedKeywords: string[];
   recommendedExternalLinks: ExternalLink[];
   suggestedTitles: string[];

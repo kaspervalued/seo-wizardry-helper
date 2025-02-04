@@ -1,14 +1,13 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { Readability } from "npm:@mozilla/readability";
 import { JSDOM } from "npm:jsdom";
+
+const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-
-const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
 const extractDomain = (url: string): string => {
   try {
@@ -19,31 +18,45 @@ const extractDomain = (url: string): string => {
   }
 };
 
-const extractKeyphrases = (text: string): string[] => {
-  const stopWords = new Set(['the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have']);
-  
-  const words = text.toLowerCase()
-    .replace(/[^\w\s]/g, '')
-    .split(/\s+/)
-    .filter(word => word.length > 2 && !stopWords.has(word));
+async function extractKeyPhrasesWithAI(content: string): Promise<string[]> {
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an SEO expert that extracts key phrases from content. Extract 5-7 specific, meaningful key phrases that best represent the main topics and concepts in the text. Focus on technical terms, industry-specific phrases, and important concepts. Avoid generic words.'
+          },
+          {
+            role: 'user',
+            content: `Extract key phrases from this content:\n\n${content}`
+          }
+        ],
+        temperature: 0.3,
+      }),
+    });
 
-  const phrases: { [key: string]: number } = {};
-  words.forEach(word => phrases[word] = (phrases[word] || 0) + 1);
+    const data = await response.json();
+    const keyPhrases = data.choices[0].message.content
+      .split('\n')
+      .map(phrase => phrase.replace(/^[-\d.\s]+/, '').trim())
+      .filter(Boolean);
 
-  return Object.entries(phrases)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 10)
-    .map(([phrase]) => phrase);
-};
+    return keyPhrases;
+  } catch (error) {
+    console.error('Error extracting key phrases with AI:', error);
+    return [];
+  }
+}
 
-const isValidArticle = (article: any): boolean => {
-  if (!article) return false;
-  const wordCount = article.textContent.split(/\s+/).length;
-  return wordCount >= 300 && wordCount <= 10000 && article.length > 1000;
-};
-
-async function extractArticleContent(url: string) {
-  console.log(`Attempting to extract content from ${url}`);
+async function analyzeArticle(url: string) {
+  console.log(`Starting analysis for ${url}`);
   
   try {
     const response = await fetch(url, {
@@ -60,66 +73,19 @@ async function extractArticleContent(url: string) {
     const html = await response.text();
     const dom = new JSDOM(html);
     const document = dom.window.document;
-    
-    // Method 1: Try Readability
-    const reader = new Readability(document);
-    let article = reader.parse();
-    
-    if (article && isValidArticle(article)) {
-      return article;
-    }
 
-    // Method 2: Try meta description + main content
-    const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content');
-    const mainContent = document.querySelector('main, article, [role="main"]');
+    const title = document.title || '';
+    const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content') || '';
     
-    if (mainContent) {
-      const tempDoc = new JSDOM().window.document;
-      const tempDiv = tempDoc.createElement('div');
-      tempDiv.innerHTML = mainContent.innerHTML;
-      
-      // Clean up unwanted elements
-      ['nav', 'header', 'footer', '.sidebar', '.comments'].forEach(sel => {
-        tempDiv.querySelectorAll(sel).forEach(el => el.remove());
-      });
-      
-      if (tempDiv.textContent.length > 1000) {
-        return {
-          title: document.title,
-          content: tempDiv.innerHTML,
-          textContent: tempDiv.textContent,
-          excerpt: metaDesc || tempDiv.textContent.slice(0, 200),
-          length: tempDiv.textContent.length
-        };
-      }
-    }
+    const mainContent = document.querySelector('main, article, [role="main"], #content, .content');
+    const textContent = mainContent?.textContent || document.body.textContent || '';
     
-    return null;
-  } catch (error) {
-    console.error(`Error extracting content from ${url}:`, error);
-    return null;
-  }
-}
-
-async function analyzeArticle(url: string) {
-  try {
-    const article = await extractArticleContent(url);
-    
-    if (!article) {
-      console.error(`Failed to extract article content from ${url}`);
-      return null;
-    }
-
-    const dom = new JSDOM(article.content);
-    const contentDiv = dom.window.document;
-
-    const headings = Array.from(contentDiv.querySelectorAll('h1, h2, h3, h4, h5, h6'));
-    const headingStructure = headings.map(heading => ({
-      level: heading.tagName.toLowerCase(),
-      text: heading.textContent?.trim() || ''
-    }));
-
-    const links = Array.from(contentDiv.querySelectorAll('a[href^="http"]'))
+    const wordCount = textContent.split(/\s+/).length;
+    const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    const paragraphs = document.querySelectorAll('p');
+    const images = document.querySelectorAll('img');
+    const videos = document.querySelectorAll('video, iframe[src*="youtube"], iframe[src*="vimeo"]');
+    const links = Array.from(document.querySelectorAll('a[href^="http"]'))
       .map(link => ({
         url: link.getAttribute('href') || '',
         text: link.textContent?.trim() || '',
@@ -127,24 +93,28 @@ async function analyzeArticle(url: string) {
       }))
       .filter(link => link.domain !== extractDomain(url));
 
-    const textContent = article.textContent || '';
-    const keyphrases = extractKeyphrases(textContent);
+    const keywords = await extractKeyPhrasesWithAI(textContent);
+
+    const headingStructure = Array.from(headings).map(heading => ({
+      level: heading.tagName.toLowerCase(),
+      text: heading.textContent?.trim() || ''
+    }));
 
     return {
-      title: article.title || "",
+      title,
       url,
       domain: extractDomain(url),
-      wordCount: textContent.split(/\s+/).length,
+      wordCount,
       characterCount: textContent.length,
       headingsCount: headings.length,
-      paragraphsCount: contentDiv.querySelectorAll('p').length,
-      imagesCount: contentDiv.querySelectorAll('img').length,
-      videosCount: contentDiv.querySelectorAll('iframe[src*="youtube"], iframe[src*="vimeo"], video').length,
+      paragraphsCount: paragraphs.length,
+      imagesCount: images.length,
+      videosCount: videos.length,
       externalLinks: links,
       externalLinksCount: links.length,
-      metaTitle: article.title || "",
-      metaDescription: article.excerpt || "",
-      keywords: keyphrases,
+      metaTitle: title,
+      metaDescription: metaDesc,
+      keywords,
       headingStructure,
     };
   } catch (error) {
@@ -153,37 +123,22 @@ async function analyzeArticle(url: string) {
   }
 }
 
-async function generateSuggestedContent(keyword: string, analyses: any[]) {
+async function generateIdealStructure(keyword: string, analyses: any[]) {
   try {
-    // Prepare context from analyses
-    const topics = analyses.map(a => a.title).join('\n');
-    const keyPhrases = Array.from(
-      new Set(analyses.flatMap(a => a.keywords))
-    ).slice(0, 5).join(', ');
+    // Calculate target word count
+    const validWordCounts = analyses
+      .map(a => a.wordCount)
+      .filter(count => count > 0);
+    
+    const targetWordCount = Math.round(
+      validWordCounts.reduce((sum, count) => sum + count, 0) / validWordCounts.length
+    );
 
-    const prompt = `As an SEO expert, generate 3 titles and 3 meta descriptions for an article about "${keyword}".
+    // Collect all keywords from analyses
+    const allKeywords = analyses.flatMap(a => a.keywords);
+    const keywordContext = allKeywords.join('\n');
 
-Context:
-- Main keyword: ${keyword}
-- Related topics from competitor articles:
-${topics}
-- Key phrases found: ${keyPhrases}
-
-Requirements for titles:
-- Keep the exact keyword "${keyword}" intact, don't split or modify it
-- Each title should be 50-60 characters
-- Start with action verbs
-- If the keyword contains "vs" or "versus", make it a comparison-focused title
-
-Requirements for descriptions:
-- Keep the exact keyword "${keyword}" intact, use it exactly once
-- Each description should be 110-160 characters
-- Match user search intent (if comparison keyword, focus on comparison aspects)
-- Be specific and actionable
-- Include a clear value proposition
-
-Format the response as JSON with arrays "titles" and "descriptions".`;
-
+    // Use OpenAI to synthesize recommended keywords
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -193,44 +148,105 @@ Format the response as JSON with arrays "titles" and "descriptions".`;
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          { role: 'system', content: 'You are an SEO expert that generates optimized titles and descriptions.' },
-          { role: 'user', content: prompt }
+          {
+            role: 'system',
+            content: `You are an SEO expert that analyzes key phrases and synthesizes them into recommended keywords. 
+            Focus on specific, meaningful phrases that are most relevant to the main topic.
+            If the main keyword contains "vs" or "versus", ensure recommendations include comparison-related terms.
+            Avoid generic words and ensure all recommendations are highly specific to the topic.`
+          },
+          {
+            role: 'user',
+            content: `Main keyword: "${keyword}"
+            
+            Here are the key phrases found in competitor articles:
+            ${keywordContext}
+            
+            Analyze these key phrases and provide 5-7 most important recommended keywords that should be included in a new article about "${keyword}". Focus on specific, technical terms and important concepts.`
+          }
+        ],
+        temperature: 0.3,
+      }),
+    });
+
+    const data = await response.json();
+    const recommendedKeywords = data.choices[0].message.content
+      .split('\n')
+      .map(phrase => phrase.replace(/^[-\d.\s]+/, '').trim())
+      .filter(Boolean);
+
+    // Generate titles and descriptions
+    const titleResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an SEO expert that generates optimized titles and descriptions.
+            Requirements for titles:
+            - Keep the exact keyword "${keyword}" intact, don't split or modify it
+            - Each title should be 50-60 characters
+            - If the keyword contains "vs" or "versus", make it a comparison-focused title
+            
+            Requirements for descriptions:
+            - Keep the exact keyword "${keyword}" intact, use it exactly once
+            - Each description should be 150-160 characters
+            - Match user search intent (if comparison keyword, focus on comparison aspects)
+            - Be specific and actionable`
+          },
+          {
+            role: 'user',
+            content: `Generate 3 SEO-optimized titles and descriptions for an article about "${keyword}".
+            
+            Context:
+            - Main keyword: ${keyword}
+            - Related key phrases: ${recommendedKeywords.join(', ')}
+            - Target word count: ${targetWordCount} words
+            
+            Format the response as JSON with arrays "titles" and "descriptions".`
+          }
         ],
         temperature: 0.7,
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = JSON.parse(data.choices[0].message.content);
+    const titleData = await titleResponse.json();
+    const { titles: suggestedTitles, descriptions: suggestedDescriptions } = JSON.parse(
+      titleData.choices[0].message.content
+    );
 
     return {
-      suggestedTitles: content.titles,
-      suggestedDescriptions: content.descriptions,
-      recommendedKeywords: Array.from(
-        new Set(analyses.flatMap(a => a.keywords))
-      ).slice(0, 5),
+      targetWordCount,
+      suggestedTitles,
+      suggestedDescriptions,
+      recommendedKeywords,
+      recommendedExternalLinks: analyses
+        .flatMap(a => a.externalLinks)
+        .reduce((acc: any[], link) => {
+          const existing = acc.find(l => l.url === link.url);
+          if (existing) {
+            existing.frequency++;
+          } else {
+            acc.push({ ...link, frequency: 1 });
+          }
+          return acc;
+        }, [])
+        .sort((a, b) => b.frequency - a.frequency)
+        .slice(0, 5),
     };
   } catch (error) {
-    console.error('Error generating content with OpenAI:', error);
-    // Fallback to basic suggestions if AI fails
+    console.error('Error generating ideal structure:', error);
     return {
-      suggestedTitles: [
-        `Compare ${keyword}: A Complete Analysis and Guide`,
-        `${keyword}: Which One Should You Choose?`,
-        `Understanding ${keyword}: Key Differences Explained`,
-      ],
-      suggestedDescriptions: [
-        `Explore the key differences between ${keyword}. Our comprehensive comparison helps you understand which solution best fits your needs.`,
-        `Looking to understand ${keyword}? Our detailed analysis breaks down the pros and cons to help you make an informed decision.`,
-        `Discover the essential differences between ${keyword}. Learn which option is best for your specific use case with our expert comparison.`,
-      ],
-      recommendedKeywords: Array.from(
-        new Set(analyses.flatMap(a => a.keywords))
-      ).slice(0, 5),
+      targetWordCount: 0,
+      suggestedTitles: [],
+      suggestedDescriptions: [],
+      recommendedKeywords: [],
+      recommendedExternalLinks: [],
     };
   }
 }
@@ -260,29 +276,7 @@ serve(async (req) => {
       throw new Error('Failed to analyze any of the provided articles');
     }
 
-    // Calculate link frequency
-    const linkFrequency: { [key: string]: { count: number; text: string; domain: string } } = {};
-    results.forEach(analysis => {
-      analysis.externalLinks.forEach(link => {
-        if (!linkFrequency[link.url]) {
-          linkFrequency[link.url] = { count: 0, text: link.text, domain: link.domain };
-        }
-        linkFrequency[link.url].count++;
-      });
-    });
-
-    const idealStructure = {
-      ...(await generateSuggestedContent(keyword, results)),
-      recommendedExternalLinks: Object.entries(linkFrequency)
-        .map(([url, data]) => ({
-          url,
-          text: data.text,
-          domain: data.domain,
-          frequency: data.count
-        }))
-        .sort((a, b) => b.frequency - a.frequency)
-        .slice(0, 5)
-    };
+    const idealStructure = await generateIdealStructure(keyword, results);
 
     return new Response(
       JSON.stringify({

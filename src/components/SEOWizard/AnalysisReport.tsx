@@ -9,8 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArticleAnalysis, IdealStructure } from "@/types/seo";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertTriangle } from "lucide-react";
 
 interface AnalysisReportProps {
   analyses: ArticleAnalysis[];
@@ -145,6 +143,13 @@ export const AnalysisReport = ({
           <h3 className="text-lg font-semibold mb-4">Ideal Article</h3>
           <ScrollArea className="h-[300px] rounded-md">
             <div className="space-y-4">
+              <div>
+                <h4 className="font-medium mb-2">Target Length</h4>
+                <p className="text-sm">
+                  Recommended word count: {idealStructure.targetWordCount} words
+                </p>
+              </div>
+
               <div>
                 <h4 className="font-medium mb-2">Suggested Titles</h4>
                 <ul className="space-y-2 text-sm">
