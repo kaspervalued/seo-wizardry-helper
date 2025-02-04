@@ -23,38 +23,20 @@ const Index = () => {
     keyword: string;
     country: string;
     language: string;
+    articles: Article[];
   }) => {
     setKeyword(data.keyword);
     setCountry(data.country);
     setLanguage(data.language);
-    
-    // TODO: Implement SerpAPI call
-    // For now, using mock data
-    const mockArticles: Article[] = [
-      {
-        title: "10 SEO Tips for Beginners",
-        url: "https://example.com/seo-tips",
-        snippet: "Learn the basics of SEO with these 10 essential tips...",
-        rank: 1,
-      },
-      {
-        title: "SEO Guide 2024",
-        url: "https://example.com/seo-guide",
-        snippet: "Complete guide to SEO in 2024...",
-        rank: 2,
-      },
-      // Add more mock articles
-    ];
-    
-    setArticles(mockArticles);
+    setArticles(data.articles);
     setCurrentStep(2);
   };
 
   const handleArticleSelection = async (selected: Article[]) => {
     setSelectedArticles(selected);
     
-    // TODO: Implement article analysis
-    // For now, using mock data
+    // TODO: Implement real article analysis
+    // For now, using mock data for analysis
     const mockAnalyses: ArticleAnalysis[] = selected.map((article) => ({
       title: article.title,
       url: article.url,

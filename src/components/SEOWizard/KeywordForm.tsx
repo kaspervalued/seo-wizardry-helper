@@ -11,23 +11,39 @@ import {
 import { COUNTRIES, LANGUAGES } from "@/lib/constants";
 import { useToast } from "@/components/ui/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { Article } from "@/types/seo";
 
 interface KeywordFormProps {
   onSubmit: (data: {
     keyword: string;
     country: string;
     language: string;
+    articles: Article[];
   }) => void;
 }
 
-const fetchSerpResults = async (keyword: string) => {
+interface SerpApiResult {
+  position: number;
+  title: string;
+  link: string;
+  snippet: string;
+}
+
+const fetchSerpResults = async (keyword: string): Promise<Article[]> => {
   try {
     const response = await fetch(`https://serpapi.com/search.json?q=${encodeURIComponent(keyword)}&location=United States&hl=en&api_key=${process.env.SERPAPI_API_KEY}`);
     if (!response.ok) {
       throw new Error('Failed to fetch SERP results');
     }
     const data = await response.json();
-    return data.organic_results || [];
+    
+    // Transform SERP results to our Article type
+    return (data.organic_results || []).map((result: SerpApiResult) => ({
+      title: result.title,
+      url: result.link,
+      snippet: result.snippet,
+      rank: result.position
+    }));
   } catch (error) {
     console.error('Error fetching SERP results:', error);
     throw error;
@@ -40,7 +56,7 @@ export const KeywordForm = ({ onSubmit }: KeywordFormProps) => {
   const [language, setLanguage] = useState("en"); // Default to English
   const { toast } = useToast();
 
-  const { data: serpResults, isLoading, error } = useQuery({
+  const { data: articles, isLoading, error, refetch } = useQuery({
     queryKey: ['serpResults', keyword],
     queryFn: () => fetchSerpResults(keyword),
     enabled: false, // Don't fetch automatically
@@ -58,7 +74,17 @@ export const KeywordForm = ({ onSubmit }: KeywordFormProps) => {
       return;
     }
 
-    onSubmit({ keyword, country, language });
+    // Trigger the query
+    const result = await refetch();
+    
+    if (result.data) {
+      onSubmit({ 
+        keyword, 
+        country, 
+        language,
+        articles: result.data
+      });
+    }
   };
 
   return (
