@@ -344,6 +344,66 @@ async function analyzeArticle(url: string) {
   }
 }
 
+const generateSuggestedTitles = (keywords: string[], articles: any[]): string[] => {
+  // Extract common themes and topics from articles
+  const topics = articles.flatMap(article => article.keywords || []);
+  const mainKeyword = keywords[0] || '';
+  
+  // Generate titles following the guidelines:
+  // - Start with action verb
+  // - Include keyword
+  // - 50-60 characters
+  const actionVerbs = ['Master', 'Discover', 'Unlock', 'Implement', 'Transform', 'Optimize', 'Leverage'];
+  
+  return actionVerbs.map(verb => {
+    const title = `${verb} ${mainKeyword} to Enhance Your Business Strategy`;
+    return title.length > 60 ? title.substring(0, 57) + '...' : title;
+  }).slice(0, 5); // Return top 5 suggestions
+};
+
+const generateSuggestedDescriptions = (keywords: string[], articles: any[]): string[] => {
+  const mainKeyword = keywords[0] || '';
+  
+  // Identify search intent from articles
+  const isHowTo = articles.some(article => 
+    article.title?.toLowerCase().includes('how to') || 
+    article.metaDescription?.toLowerCase().includes('learn') ||
+    article.metaDescription?.toLowerCase().includes('guide')
+  );
+  
+  const isComparison = articles.some(article =>
+    article.title?.toLowerCase().includes('vs') ||
+    article.title?.toLowerCase().includes('comparison') ||
+    article.metaDescription?.toLowerCase().includes('compare')
+  );
+  
+  const descriptions = [];
+  
+  if (isHowTo) {
+    descriptions.push(
+      `Learn essential ${mainKeyword} strategies and best practices in this comprehensive guide. Discover expert tips to improve your approach.`,
+      `Master the fundamentals of ${mainKeyword} with our step-by-step guide. Perfect for beginners and experienced professionals alike.`
+    );
+  } else if (isComparison) {
+    descriptions.push(
+      `Compare different ${mainKeyword} approaches and find the perfect solution for your needs. In-depth analysis of top options.`,
+      `Explore the pros and cons of various ${mainKeyword} solutions. Make an informed decision with our detailed comparison.`
+    );
+  } else {
+    descriptions.push(
+      `Enhance your understanding of ${mainKeyword} with our expert insights. Practical tips and strategies for better results.`,
+      `Discover proven ${mainKeyword} techniques that drive success. Expert advice and actionable strategies included.`
+    );
+  }
+  
+  // Ensure descriptions are between 110-160 characters
+  return descriptions.map(desc => 
+    desc.length > 160 ? desc.substring(0, 157) + '...' : 
+    desc.length < 110 ? desc + ' Comprehensive insights and expert analysis included.' : 
+    desc
+  );
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -404,7 +464,15 @@ serve(async (req) => {
           frequency: data.count
         }))
         .sort((a, b) => b.frequency - a.frequency)
-        .slice(0, 5)
+        .slice(0, 5),
+      suggestedTitles: generateSuggestedTitles(
+        Array.from(new Set(results.flatMap(a => a.keywords))).slice(0, 3),
+        results
+      ),
+      suggestedDescriptions: generateSuggestedDescriptions(
+        Array.from(new Set(results.flatMap(a => a.keywords))).slice(0, 3),
+        results
+      )
     };
 
     return new Response(

@@ -142,9 +142,31 @@ export const AnalysisReport = ({
         </Card>
 
         <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Ideal Structure</h3>
+          <h3 className="text-lg font-semibold mb-4">Ideal Article</h3>
           <ScrollArea className="h-[300px] rounded-md">
             <div className="space-y-4">
+              <div>
+                <h4 className="font-medium mb-2">Suggested Titles</h4>
+                <ul className="space-y-2 text-sm">
+                  {idealStructure.suggestedTitles.map((title, idx) => (
+                    <li key={idx} className="p-2 bg-gray-50 rounded-md">
+                      {title}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="font-medium mb-2">Suggested Descriptions</h4>
+                <ul className="space-y-2 text-sm">
+                  {idealStructure.suggestedDescriptions.map((desc, idx) => (
+                    <li key={idx} className="p-2 bg-gray-50 rounded-md">
+                      {desc}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
               <div>
                 <h4 className="font-medium mb-2">Recommended Key Phrases</h4>
                 <div className="flex flex-wrap gap-2">

@@ -6,7 +6,7 @@ export interface Article {
 }
 
 export interface HeadingStructure {
-  level: string; // "h1", "h2", "h3", "h4", "h5", "h6"
+  level: string;
   text: string;
 }
 
@@ -40,4 +40,6 @@ export interface ArticleAnalysis {
 export interface IdealStructure {
   recommendedKeywords: string[];
   recommendedExternalLinks: ExternalLink[];
+  suggestedTitles: string[];
+  suggestedDescriptions: string[];
 }
