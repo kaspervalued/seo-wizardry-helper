@@ -38,11 +38,6 @@ export interface ArticleAnalysis {
 }
 
 export interface IdealStructure {
-  targetWordCount: number;
-  targetParagraphCount: number;
-  targetImageCount: number;
-  recommendedHeadingsCount: number;
   recommendedKeywords: string[];
-  suggestedHeadingStructure: HeadingStructure[];
   recommendedExternalLinks: ExternalLink[];
 }

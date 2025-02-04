@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArticleAnalysis, IdealStructure } from "@/types/seo";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 
 interface AnalysisReportProps {
   analyses: ArticleAnalysis[];
@@ -144,20 +146,6 @@ export const AnalysisReport = ({
           <ScrollArea className="h-[300px] rounded-md">
             <div className="space-y-4">
               <div>
-                <h4 className="font-medium mb-2">Recommended Structure</h4>
-                <ul className="space-y-2 text-sm">
-                  <li>Target Word Count: {idealStructure.targetWordCount}</li>
-                  <li>
-                    Target Paragraph Count: {idealStructure.targetParagraphCount}
-                  </li>
-                  <li>Target Image Count: {idealStructure.targetImageCount}</li>
-                  <li>
-                    Recommended Headings: {idealStructure.recommendedHeadingsCount}
-                  </li>
-                </ul>
-              </div>
-
-              <div>
                 <h4 className="font-medium mb-2">Recommended Key Phrases</h4>
                 <div className="flex flex-wrap gap-2">
                   {idealStructure.recommendedKeywords.map((keyword, idx) => (
@@ -193,6 +181,7 @@ export const AnalysisReport = ({
                 </ul>
               </div>
 
+              {/* Commented out as requested
               <div>
                 <h4 className="font-medium mb-2">Suggested Heading Structure</h4>
                 <ul className="space-y-2 text-sm">
@@ -214,6 +203,7 @@ export const AnalysisReport = ({
                   )}
                 </ul>
               </div>
+              */}
             </div>
           </ScrollArea>
         </Card>

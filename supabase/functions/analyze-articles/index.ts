@@ -20,7 +20,6 @@ const extractDomain = (url: string): string => {
 
 // Helper function to extract keyphrases
 const extractKeyphrases = (text: string): string[] => {
-  // Common words to filter out
   const stopWords = new Set([
     'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i', 'it', 'for',
     'not', 'on', 'with', 'he', 'as', 'you', 'do', 'at', 'this', 'but', 'his',
@@ -34,36 +33,30 @@ const extractKeyphrases = (text: string): string[] => {
     'any', 'these', 'give', 'day', 'most', 'us'
   ]);
 
-  // Split text into words and clean them
   const words = text.toLowerCase()
     .replace(/[^\w\s]/g, '')
     .split(/\s+/)
     .filter(word => word.length > 2 && !stopWords.has(word));
 
-  // Create n-grams (1 to 3 words)
   const phrases: { [key: string]: number } = {};
   
-  // Single words
   words.forEach(word => {
     phrases[word] = (phrases[word] || 0) + 1;
   });
 
-  // Bigrams (2 words)
   for (let i = 0; i < words.length - 1; i++) {
     const bigram = `${words[i]} ${words[i + 1]}`;
     phrases[bigram] = (phrases[bigram] || 0) + 1;
   }
 
-  // Trigrams (3 words)
   for (let i = 0; i < words.length - 2; i++) {
     const trigram = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
     phrases[trigram] = (phrases[trigram] || 0) + 1;
   }
 
-  // Sort phrases by frequency and length
   return Object.entries(phrases)
     .sort(([, a], [, b]) => b - a)
-    .filter(([phrase, count]) => count > 1) // Only keep phrases that appear more than once
+    .filter(([phrase, count]) => count > 1)
     .slice(0, 15)
     .map(([phrase]) => phrase);
 };
@@ -72,16 +65,16 @@ const extractKeyphrases = (text: string): string[] => {
 const isValidArticle = (article: any): boolean => {
   if (!article) return false;
 
-  const minWordCount = 300; // Minimum words for a valid article
-  const maxWordCount = 10000; // Maximum words for a reasonable article
-  const minHeadings = 2; // Minimum number of headings for structure
+  const minWordCount = 300;
+  const maxWordCount = 10000;
+  const minHeadings = 2;
   const wordCount = article.textContent.split(/\s+/).length;
 
   return (
     wordCount >= minWordCount &&
     wordCount <= maxWordCount &&
-    article.length > 1000 && // Reasonable article length in characters
-    article.textContent.includes('.') // Contains at least some sentences
+    article.length > 1000 &&
+    article.textContent.includes('.')
   );
 };
 
@@ -91,65 +84,87 @@ async function analyzeArticle(url: string) {
     console.log(`Fetching content for ${url}`);
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+      console.error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+      return null;
     }
-    const html = await response.text();
     
-    // Parse the HTML using JSDOM
+    const html = await response.text();
+    console.log(`Successfully fetched HTML for ${url}, length: ${html.length}`);
+    
     const dom = new JSDOM(html);
     const document = dom.window.document;
     
-    // Use Readability to parse the main content
     const reader = new Readability(document, {
       charThreshold: 100,
       classesToPreserve: ['article', 'post', 'content', 'entry'],
     });
-    const article = reader.parse();
+    let article = reader.parse();
     
     if (!article || !isValidArticle(article)) {
-      throw new Error(`Failed to extract valid article content from ${url}`);
+      console.log(`Readability failed for ${url}, trying fallback methods...`);
+      
+      const selectors = [
+        'article',
+        '[role="article"]',
+        '.post-content',
+        '.article-content',
+        '.entry-content',
+        '#main-content',
+        '.main-content',
+        'main'
+      ];
+      
+      for (const selector of selectors) {
+        const element = document.querySelector(selector);
+        if (element) {
+          const tempDoc = new JSDOM().window.document;
+          const tempDiv = tempDoc.createElement('div');
+          tempDiv.innerHTML = element.innerHTML;
+          
+          const tempReader = new Readability(tempDoc);
+          article = tempReader.parse();
+          
+          if (article && isValidArticle(article)) {
+            console.log(`Successfully extracted article from ${url} using selector: ${selector}`);
+            break;
+          }
+        }
+      }
+    }
+    
+    if (!article || !isValidArticle(article)) {
+      console.error(`Failed to extract valid article content from ${url} after all attempts`);
+      return null;
     }
 
-    console.log(`Successfully extracted article from ${url}`);
-
-    // Create a temporary div to parse HTML content
     const contentDiv = document.createElement('div');
     contentDiv.innerHTML = article.content;
 
-    // Count headings with their levels
     const headings = Array.from(contentDiv.querySelectorAll('h1, h2, h3, h4, h5, h6'));
     const headingStructure = headings.map(heading => ({
       level: heading.tagName.toLowerCase(),
       text: heading.textContent?.trim() || ''
     }));
 
-    // Count paragraphs
     const paragraphs = contentDiv.querySelectorAll('p');
-    
-    // Count images
     const images = contentDiv.querySelectorAll('img');
-    
-    // Count videos (common video embed patterns)
     const videos = contentDiv.querySelectorAll(
       'iframe[src*="youtube"], iframe[src*="youtu.be"], ' +
       'iframe[src*="vimeo"], video, ' +
       'div[class*="video"], div[id*="video"]'
     );
     
-    // Extract and analyze external links
     const links = Array.from(contentDiv.querySelectorAll('a[href^="http"]'))
       .map(link => ({
         url: link.getAttribute('href') || '',
         text: link.textContent?.trim() || '',
         domain: extractDomain(link.getAttribute('href') || '')
       }))
-      .filter(link => link.domain !== extractDomain(url)); // Filter out internal links
+      .filter(link => link.domain !== extractDomain(url));
 
-    // Extract text content for word counting and phrase analysis
     const textContent = article.textContent || '';
     const keyphrases = extractKeyphrases(textContent);
 
-    // Get meta description
     const metaDescription = document.querySelector('meta[name="description"]')?.getAttribute('content') || 
                           document.querySelector('meta[property="og:description"]')?.getAttribute('content') || 
                           '';
@@ -181,7 +196,6 @@ async function analyzeArticle(url: string) {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -190,18 +204,25 @@ serve(async (req) => {
     const { urls } = await req.json();
     console.log('Analyzing URLs:', urls);
     
-    // Process articles in batches of 3 to avoid memory issues
     const batchSize = 3;
     const results = [];
+    const failedUrls = [];
     
     for (let i = 0; i < urls.length; i += batchSize) {
       const batch = urls.slice(i, i + batchSize);
       const batchResults = await Promise.all(
-        batch.map(url => analyzeArticle(url))
+        batch.map(async url => {
+          const result = await analyzeArticle(url);
+          if (!result) {
+            failedUrls.push(url);
+            return null;
+          }
+          return result;
+        })
       );
+      
       results.push(...batchResults.filter(result => result !== null));
       
-      // Add a small delay between batches to prevent resource exhaustion
       if (i + batchSize < urls.length) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
@@ -211,7 +232,6 @@ serve(async (req) => {
       throw new Error('Failed to analyze any of the provided articles');
     }
 
-    // Find common external links across articles
     const linkFrequency: { [key: string]: { count: number; text: string; domain: string } } = {};
     results.forEach(analysis => {
       analysis.externalLinks.forEach(link => {
@@ -222,26 +242,12 @@ serve(async (req) => {
       });
     });
 
-    // Generate ideal structure based on the analyses
     const idealStructure = {
-      targetWordCount: Math.round(
-        results.reduce((sum, a) => sum + a.wordCount, 0) / results.length
-      ),
-      targetParagraphCount: Math.round(
-        results.reduce((sum, a) => sum + a.paragraphsCount, 0) / results.length
-      ),
-      targetImageCount: Math.round(
-        results.reduce((sum, a) => sum + a.imagesCount, 0) / results.length
-      ),
-      recommendedHeadingsCount: Math.round(
-        results.reduce((sum, a) => sum + a.headingsCount, 0) / results.length
-      ),
       recommendedKeywords: Array.from(
         new Set(results.flatMap(a => a.keywords))
       ).slice(0, 10),
-      suggestedHeadingStructure: results[0].headingStructure,
       recommendedExternalLinks: Object.entries(linkFrequency)
-        .filter(([, data]) => data.count > 1) // Only include links that appear in multiple articles
+        .filter(([, data]) => data.count > 1)
         .map(([url, data]) => ({
           url,
           text: data.text,
@@ -249,13 +255,14 @@ serve(async (req) => {
           frequency: data.count
         }))
         .sort((a, b) => b.frequency - a.frequency)
-        .slice(0, 5) // Top 5 most common external links
+        .slice(0, 5)
     };
 
     return new Response(
       JSON.stringify({
         analyses: results,
         idealStructure,
+        failedUrls,
       }),
       {
         headers: {
