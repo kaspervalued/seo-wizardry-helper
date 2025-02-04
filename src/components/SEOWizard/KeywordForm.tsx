@@ -12,6 +12,7 @@ import { COUNTRIES, LANGUAGES } from "@/lib/constants";
 import { useToast } from "@/components/ui/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { Article } from "@/types/seo";
+import { supabase } from "@/integrations/supabase/client";
 
 interface KeywordFormProps {
   onSubmit: (data: {
@@ -31,12 +32,12 @@ interface SerpApiResult {
 
 const fetchSerpResults = async (keyword: string): Promise<Article[]> => {
   try {
-    const response = await fetch(`https://serpapi.com/search.json?q=${encodeURIComponent(keyword)}&location=United States&hl=en&api_key=${process.env.SERPAPI_API_KEY}`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch SERP results');
-    }
-    const data = await response.json();
-    
+    const { data, error } = await supabase.functions.invoke('fetch-serp', {
+      body: { keyword }
+    });
+
+    if (error) throw error;
+
     // Transform SERP results to our Article type
     return (data.organic_results || []).map((result: SerpApiResult) => ({
       title: result.title,
