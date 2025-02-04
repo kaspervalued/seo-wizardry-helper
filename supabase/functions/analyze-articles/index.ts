@@ -7,190 +7,42 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Helper function to extract domain from URL
 const extractDomain = (url: string): string => {
   try {
-    const urlObj = new URL(url);
-    return urlObj.hostname;
+    return new URL(url).hostname;
   } catch (error) {
     console.error(`Error extracting domain from ${url}:`, error);
     return '';
   }
 };
 
-// Helper function to extract keyphrases
 const extractKeyphrases = (text: string): string[] => {
-  const stopWords = new Set([
-    'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i', 'it', 'for',
-    'not', 'on', 'with', 'he', 'as', 'you', 'do', 'at', 'this', 'but', 'his',
-    'by', 'from', 'they', 'we', 'say', 'her', 'she', 'or', 'an', 'will', 'my',
-    'one', 'all', 'would', 'there', 'their', 'what', 'so', 'up', 'out', 'if',
-    'about', 'who', 'get', 'which', 'go', 'me', 'when', 'make', 'can', 'like',
-    'time', 'no', 'just', 'him', 'know', 'take', 'people', 'into', 'year', 'your',
-    'good', 'some', 'could', 'them', 'see', 'other', 'than', 'then', 'now', 'look',
-    'only', 'come', 'its', 'over', 'think', 'also', 'back', 'after', 'use', 'two',
-    'how', 'our', 'work', 'first', 'well', 'way', 'even', 'new', 'want', 'because',
-    'any', 'these', 'give', 'day', 'most', 'us'
-  ]);
-
-  // Clean and tokenize text
+  const stopWords = new Set(['the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have']);
+  
   const words = text.toLowerCase()
     .replace(/[^\w\s]/g, '')
     .split(/\s+/)
     .filter(word => word.length > 2 && !stopWords.has(word));
 
   const phrases: { [key: string]: number } = {};
-  
-  // Single words
-  words.forEach(word => {
-    phrases[word] = (phrases[word] || 0) + 1;
-  });
-
-  // Bigrams
-  for (let i = 0; i < words.length - 1; i++) {
-    const bigram = `${words[i]} ${words[i + 1]}`;
-    phrases[bigram] = (phrases[bigram] || 0) + 1;
-  }
-
-  // Trigrams
-  for (let i = 0; i < words.length - 2; i++) {
-    const trigram = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
-    phrases[trigram] = (phrases[trigram] || 0) + 1;
-  }
+  words.forEach(word => phrases[word] = (phrases[word] || 0) + 1);
 
   return Object.entries(phrases)
     .sort(([, a], [, b]) => b - a)
-    .filter(([, count]) => count > 1)
-    .slice(0, 15)
+    .slice(0, 10)
     .map(([phrase]) => phrase);
 };
 
-// Helper function to validate article content
 const isValidArticle = (article: any): boolean => {
   if (!article) return false;
-
-  const minWordCount = 300;
-  const maxWordCount = 10000;
   const wordCount = article.textContent.split(/\s+/).length;
-
-  return (
-    wordCount >= minWordCount &&
-    wordCount <= maxWordCount &&
-    article.length > 1000 &&
-    article.textContent.includes('.')
-  );
+  return wordCount >= 300 && wordCount <= 10000 && article.length > 1000;
 };
 
-async function extractArticleContent(url: string, html: string) {
+async function extractArticleContent(url: string) {
   console.log(`Attempting to extract content from ${url}`);
-  const dom = new JSDOM(html);
-  const document = dom.window.document;
   
-  // Method 1: Try Readability
   try {
-    const reader = new Readability(document);
-    let article = reader.parse();
-    
-    if (article && isValidArticle(article)) {
-      console.log(`Successfully extracted article from ${url} using Readability`);
-      return article;
-    }
-  } catch (error) {
-    console.error(`Readability failed for ${url}:`, error);
-  }
-  
-  // Method 2: Try common article selectors
-  const selectors = [
-    'article',
-    '[role="article"]',
-    '.post-content',
-    '.article-content',
-    '.entry-content',
-    '#main-content',
-    '.main-content',
-    'main',
-    '.content',
-    '.post'
-  ];
-  
-  for (const selector of selectors) {
-    try {
-      const element = document.querySelector(selector);
-      if (element) {
-        const tempDoc = new JSDOM().window.document;
-        const tempDiv = tempDoc.createElement('div');
-        tempDiv.innerHTML = element.innerHTML;
-        
-        // Clean up unwanted elements
-        const unwantedSelectors = [
-          'nav',
-          'header',
-          'footer',
-          '.sidebar',
-          '.comments',
-          '.advertisement',
-          '.social-share',
-          '.newsletter'
-        ];
-        
-        unwantedSelectors.forEach(sel => {
-          const elements = tempDiv.querySelectorAll(sel);
-          elements.forEach(el => el.remove());
-        });
-        
-        const tempReader = new Readability(tempDoc);
-        const article = tempReader.parse();
-        
-        if (article && isValidArticle(article)) {
-          console.log(`Successfully extracted article from ${url} using selector: ${selector}`);
-          return article;
-        }
-      }
-    } catch (error) {
-      continue;
-    }
-  }
-  
-  // Method 3: Try to find the largest text block
-  try {
-    const textBlocks = Array.from(document.getElementsByTagName('*'))
-      .filter(el => {
-        const text = el.textContent?.trim() || '';
-        return text.length > 500 && 
-               text.split('.').length > 3 && 
-               el.querySelectorAll('p, h1, h2, h3, h4, h5, h6').length > 2;
-      })
-      .map(el => ({
-        element: el,
-        textLength: el.textContent?.length || 0
-      }))
-      .sort((a, b) => b.textLength - a.textLength);
-    
-    if (textBlocks.length > 0) {
-      const largestBlock = textBlocks[0];
-      const tempDoc = new JSDOM().window.document;
-      const tempDiv = tempDoc.createElement('div');
-      tempDiv.innerHTML = largestBlock.element.innerHTML;
-      
-      const tempReader = new Readability(tempDoc);
-      const article = tempReader.parse();
-      
-      if (article && isValidArticle(article)) {
-        console.log(`Successfully extracted article from ${url} using largest text block method`);
-        return article;
-      }
-    }
-  } catch (error) {
-    console.error(`Error with largest text block method for ${url}:`, error);
-  }
-
-  console.error(`Failed to extract valid article content from ${url}`);
-  return null;
-}
-
-async function analyzeArticle(url: string) {
-  try {
-    console.log(`Fetching content for ${url}`);
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -203,7 +55,52 @@ async function analyzeArticle(url: string) {
     }
     
     const html = await response.text();
-    const article = await extractArticleContent(url, html);
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+    
+    // Method 1: Try Readability
+    const reader = new Readability(document);
+    let article = reader.parse();
+    
+    if (article && isValidArticle(article)) {
+      return article;
+    }
+
+    // Method 2: Try meta description + main content
+    const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content');
+    const mainContent = document.querySelector('main, article, [role="main"]');
+    
+    if (mainContent) {
+      const tempDoc = new JSDOM().window.document;
+      const tempDiv = tempDoc.createElement('div');
+      tempDiv.innerHTML = mainContent.innerHTML;
+      
+      // Clean up unwanted elements
+      ['nav', 'header', 'footer', '.sidebar', '.comments'].forEach(sel => {
+        tempDiv.querySelectorAll(sel).forEach(el => el.remove());
+      });
+      
+      if (tempDiv.textContent.length > 1000) {
+        return {
+          title: document.title,
+          content: tempDiv.innerHTML,
+          textContent: tempDiv.textContent,
+          excerpt: metaDesc || tempDiv.textContent.slice(0, 200),
+          length: tempDiv.textContent.length
+        };
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`Error extracting content from ${url}:`, error);
+    return null;
+  }
+}
+
+async function analyzeArticle(url: string) {
+  try {
+    const article = await extractArticleContent(url);
     
     if (!article) {
       console.error(`Failed to extract article content from ${url}`);
@@ -219,10 +116,6 @@ async function analyzeArticle(url: string) {
       text: heading.textContent?.trim() || ''
     }));
 
-    const paragraphs = contentDiv.querySelectorAll('p');
-    const images = contentDiv.querySelectorAll('img');
-    const videos = contentDiv.querySelectorAll('iframe[src*="youtube"], iframe[src*="vimeo"], video');
-    
     const links = Array.from(contentDiv.querySelectorAll('a[href^="http"]'))
       .map(link => ({
         url: link.getAttribute('href') || '',
@@ -241,13 +134,13 @@ async function analyzeArticle(url: string) {
       wordCount: textContent.split(/\s+/).length,
       characterCount: textContent.length,
       headingsCount: headings.length,
-      paragraphsCount: paragraphs.length,
-      imagesCount: images.length,
-      videosCount: videos.length,
+      paragraphsCount: contentDiv.querySelectorAll('p').length,
+      imagesCount: contentDiv.querySelectorAll('img').length,
+      videosCount: contentDiv.querySelectorAll('iframe[src*="youtube"], iframe[src*="vimeo"], video').length,
       externalLinks: links,
       externalLinksCount: links.length,
       metaTitle: article.title || "",
-      metaDescription: "",
+      metaDescription: article.excerpt || "",
       keywords: keyphrases,
       headingStructure,
     };
@@ -266,30 +159,19 @@ serve(async (req) => {
     const { urls } = await req.json();
     console.log('Analyzing URLs:', urls);
     
-    // Process articles in smaller batches to avoid resource limits
-    const batchSize = 2;
+    // Process articles one at a time
     const results = [];
     const failedUrls = [];
     
-    for (let i = 0; i < urls.length; i += batchSize) {
-      const batch = urls.slice(i, i + batchSize);
-      const batchResults = await Promise.all(
-        batch.map(async url => {
-          const result = await analyzeArticle(url);
-          if (!result) {
-            failedUrls.push(url);
-            return null;
-          }
-          return result;
-        })
-      );
-      
-      results.push(...batchResults.filter(result => result !== null));
-      
-      // Add delay between batches to prevent resource exhaustion
-      if (i + batchSize < urls.length) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+    for (const url of urls) {
+      const result = await analyzeArticle(url);
+      if (result) {
+        results.push(result);
+      } else {
+        failedUrls.push(url);
       }
+      // Add a small delay between requests
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
     if (results.length === 0) {
@@ -307,12 +189,28 @@ serve(async (req) => {
       });
     });
 
+    // Generate suggested titles and descriptions based on analyzed content
+    const commonKeywords = Array.from(
+      new Set(results.flatMap(a => a.keywords))
+    ).slice(0, 5);
+
+    const suggestedTitles = [
+      `Master ${commonKeywords[0]}: A Complete Guide to ${commonKeywords[1]}`,
+      `Transform Your ${commonKeywords[0]} with Expert ${commonKeywords[1]} Tips`,
+      `Discover Essential ${commonKeywords[0]} Strategies for ${commonKeywords[1]}`,
+    ];
+
+    const suggestedDescriptions = [
+      `Learn everything you need to know about ${commonKeywords[0]}. This comprehensive guide covers ${commonKeywords[1]} and provides expert tips for success.`,
+      `Looking to improve your ${commonKeywords[0]}? Explore our expert guide on ${commonKeywords[1]} with practical strategies and proven techniques.`,
+      `Master the art of ${commonKeywords[0]} with our in-depth guide. Discover essential ${commonKeywords[1]} techniques and best practices.`,
+    ];
+
     const idealStructure = {
-      recommendedKeywords: Array.from(
-        new Set(results.flatMap(a => a.keywords))
-      ).slice(0, 10),
+      suggestedTitles,
+      suggestedDescriptions,
+      recommendedKeywords: commonKeywords,
       recommendedExternalLinks: Object.entries(linkFrequency)
-        .filter(([, data]) => data.count > 1)
         .map(([url, data]) => ({
           url,
           text: data.text,
