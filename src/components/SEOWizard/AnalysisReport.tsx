@@ -38,6 +38,24 @@ export const AnalysisReport = ({
                   <ScrollArea className="h-[300px] rounded-md">
                     <div className="space-y-4 p-4">
                       <div>
+                        <h4 className="font-medium mb-2">Article Information</h4>
+                        <ul className="space-y-2 text-sm">
+                          <li>Domain: {analysis.domain}</li>
+                          <li>
+                            URL:{" "}
+                            <a
+                              href={analysis.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-500 hover:underline"
+                            >
+                              View Article
+                            </a>
+                          </li>
+                        </ul>
+                      </div>
+
+                      <div>
                         <h4 className="font-medium mb-2">Content Statistics</h4>
                         <ul className="space-y-2 text-sm">
                           <li>Word Count: {analysis.wordCount}</li>
@@ -59,7 +77,7 @@ export const AnalysisReport = ({
                       </div>
 
                       <div>
-                        <h4 className="font-medium mb-2">Keyword Analysis</h4>
+                        <h4 className="font-medium mb-2">Key Phrases</h4>
                         <div className="flex flex-wrap gap-2">
                           {analysis.keywords.map((keyword, idx) => (
                             <span
@@ -70,6 +88,28 @@ export const AnalysisReport = ({
                             </span>
                           ))}
                         </div>
+                      </div>
+
+                      <div>
+                        <h4 className="font-medium mb-2">External Links</h4>
+                        <ul className="space-y-2 text-sm">
+                          {analysis.externalLinks.map((link, idx) => (
+                            <li key={idx}>
+                              <a
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-500 hover:underline"
+                              >
+                                {link.text || link.domain}
+                              </a>
+                              {" "}
+                              <span className="text-gray-500">
+                                ({link.domain})
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
 
                       <div>
@@ -85,6 +125,7 @@ export const AnalysisReport = ({
                                 }px`,
                               }}
                             >
+                              <span className="text-gray-500">{heading.level}:</span>{" "}
                               {heading.text}
                             </li>
                           ))}
@@ -117,7 +158,7 @@ export const AnalysisReport = ({
               </div>
 
               <div>
-                <h4 className="font-medium mb-2">Recommended Keywords</h4>
+                <h4 className="font-medium mb-2">Recommended Key Phrases</h4>
                 <div className="flex flex-wrap gap-2">
                   {idealStructure.recommendedKeywords.map((keyword, idx) => (
                     <span
@@ -128,6 +169,28 @@ export const AnalysisReport = ({
                     </span>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <h4 className="font-medium mb-2">Recommended External Links</h4>
+                <ul className="space-y-2 text-sm">
+                  {idealStructure.recommendedExternalLinks.map((link, idx) => (
+                    <li key={idx}>
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:underline"
+                      >
+                        {link.text || link.domain}
+                      </a>
+                      {" "}
+                      <span className="text-gray-500">
+                        ({link.domain}) - Found in {link.frequency} articles
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
 
               <div>
@@ -144,6 +207,7 @@ export const AnalysisReport = ({
                           }px`,
                         }}
                       >
+                        <span className="text-gray-500">{heading.level}:</span>{" "}
                         {heading.text}
                       </li>
                     )
