@@ -33,6 +33,7 @@ const extractKeyphrases = (text: string): string[] => {
     'any', 'these', 'give', 'day', 'most', 'us'
   ]);
 
+  // Clean and tokenize text
   const words = text.toLowerCase()
     .replace(/[^\w\s]/g, '')
     .split(/\s+/)
@@ -40,15 +41,18 @@ const extractKeyphrases = (text: string): string[] => {
 
   const phrases: { [key: string]: number } = {};
   
+  // Single words
   words.forEach(word => {
     phrases[word] = (phrases[word] || 0) + 1;
   });
 
+  // Bigrams
   for (let i = 0; i < words.length - 1; i++) {
     const bigram = `${words[i]} ${words[i + 1]}`;
     phrases[bigram] = (phrases[bigram] || 0) + 1;
   }
 
+  // Trigrams
   for (let i = 0; i < words.length - 2; i++) {
     const trigram = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
     phrases[trigram] = (phrases[trigram] || 0) + 1;
@@ -56,7 +60,7 @@ const extractKeyphrases = (text: string): string[] => {
 
   return Object.entries(phrases)
     .sort(([, a], [, b]) => b - a)
-    .filter(([phrase, count]) => count > 1)
+    .filter(([, count]) => count > 1)
     .slice(0, 15)
     .map(([phrase]) => phrase);
 };
@@ -67,7 +71,6 @@ const isValidArticle = (article: any): boolean => {
 
   const minWordCount = 300;
   const maxWordCount = 10000;
-  const minHeadings = 2;
   const wordCount = article.textContent.split(/\s+/).length;
 
   return (
@@ -78,7 +81,6 @@ const isValidArticle = (article: any): boolean => {
   );
 };
 
-// Add new fallback methods for article extraction
 async function extractArticleContent(url: string, html: string) {
   console.log(`Attempting to extract content from ${url}`);
   const dom = new JSDOM(html);
@@ -86,10 +88,7 @@ async function extractArticleContent(url: string, html: string) {
   
   // Method 1: Try Readability
   try {
-    const reader = new Readability(document, {
-      charThreshold: 100,
-      classesToPreserve: ['article', 'post', 'content', 'entry'],
-    });
+    const reader = new Readability(document);
     let article = reader.parse();
     
     if (article && isValidArticle(article)) {
@@ -99,8 +98,6 @@ async function extractArticleContent(url: string, html: string) {
   } catch (error) {
     console.error(`Readability failed for ${url}:`, error);
   }
-  
-  console.log(`Readability failed for ${url}, trying fallback methods...`);
   
   // Method 2: Try common article selectors
   const selectors = [
@@ -113,33 +110,13 @@ async function extractArticleContent(url: string, html: string) {
     '.main-content',
     'main',
     '.content',
-    '.post',
-    '.blog-post',
-    '.article-body',
-    '.post-body',
-    '.entry',
-    '.blog-entry',
-    '[itemprop="articleBody"]',
-    '.story-content',
-    '#article-content',
-    '.article__content',
-    '.article-text',
-    '.post__content',
-    '.post-text',
-    '.story__content',
-    '.story-text',
-    '.content__main',
-    '.main__content',
-    '.article__body',
-    '.post__body',
-    '.story__body'
+    '.post'
   ];
   
   for (const selector of selectors) {
     try {
       const element = document.querySelector(selector);
       if (element) {
-        // Create a new document to avoid modifying the original
         const tempDoc = new JSDOM().window.document;
         const tempDiv = tempDoc.createElement('div');
         tempDiv.innerHTML = element.innerHTML;
@@ -151,29 +128,9 @@ async function extractArticleContent(url: string, html: string) {
           'footer',
           '.sidebar',
           '.comments',
-          '.related-posts',
           '.advertisement',
           '.social-share',
-          '.newsletter',
-          '.author-bio',
-          '.widget',
-          '[role="complementary"]',
-          '.popup',
-          '.modal',
-          '.cookie-notice',
-          '.subscription',
-          '.promotion',
-          '.cta',
-          '.call-to-action',
-          '.share-buttons',
-          '.social-buttons',
-          '.recommended-articles',
-          '.similar-posts',
-          '.trending',
-          '.popular-posts',
-          '.sidebar-content',
-          '.advertisement-content',
-          '.ad-container'
+          '.newsletter'
         ];
         
         unwantedSelectors.forEach(sel => {
@@ -181,7 +138,6 @@ async function extractArticleContent(url: string, html: string) {
           elements.forEach(el => el.remove());
         });
         
-        // Try Readability on cleaned content
         const tempReader = new Readability(tempDoc);
         const article = tempReader.parse();
         
@@ -191,7 +147,6 @@ async function extractArticleContent(url: string, html: string) {
         }
       }
     } catch (error) {
-      console.error(`Error with selector ${selector} for ${url}:`, error);
       continue;
     }
   }
@@ -201,22 +156,15 @@ async function extractArticleContent(url: string, html: string) {
     const textBlocks = Array.from(document.getElementsByTagName('*'))
       .filter(el => {
         const text = el.textContent?.trim() || '';
-        return text.length > 500 && // Minimum text length
-               text.split('.').length > 3 && // At least 3 sentences
-               el.querySelectorAll('p, h1, h2, h3, h4, h5, h6').length > 2; // Has paragraphs and headings
+        return text.length > 500 && 
+               text.split('.').length > 3 && 
+               el.querySelectorAll('p, h1, h2, h3, h4, h5, h6').length > 2;
       })
       .map(el => ({
         element: el,
-        textLength: el.textContent?.length || 0,
-        paragraphs: el.querySelectorAll('p').length,
-        headings: el.querySelectorAll('h1, h2, h3, h4, h5, h6').length
+        textLength: el.textContent?.length || 0
       }))
-      .sort((a, b) => {
-        // Score based on text length and structure
-        const scoreA = a.textLength + (a.paragraphs * 100) + (a.headings * 200);
-        const scoreB = b.textLength + (b.paragraphs * 100) + (b.headings * 200);
-        return scoreB - scoreA;
-      });
+      .sort((a, b) => b.textLength - a.textLength);
     
     if (textBlocks.length > 0) {
       const largestBlock = textBlocks[0];
@@ -236,33 +184,10 @@ async function extractArticleContent(url: string, html: string) {
     console.error(`Error with largest text block method for ${url}:`, error);
   }
 
-  // Method 4: Try to extract content from specific meta tags
-  try {
-    const articleContent = document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
-                          document.querySelector('meta[name="description"]')?.getAttribute('content');
-    
-    if (articleContent && articleContent.length > 200) {
-      const tempDoc = new JSDOM().window.document;
-      const tempDiv = tempDoc.createElement('div');
-      tempDiv.textContent = articleContent;
-      
-      return {
-        title: document.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
-               document.querySelector('title')?.textContent || '',
-        content: tempDiv.innerHTML,
-        textContent: articleContent,
-        length: articleContent.length
-      };
-    }
-  } catch (error) {
-    console.error(`Error with meta tags method for ${url}:`, error);
-  }
-  
-  console.error(`Failed to extract valid article content from ${url} after all attempts`);
+  console.error(`Failed to extract valid article content from ${url}`);
   return null;
 }
 
-// Update the analyzeArticle function to use the new extraction method
 async function analyzeArticle(url: string) {
   try {
     console.log(`Fetching content for ${url}`);
@@ -273,14 +198,13 @@ async function analyzeArticle(url: string) {
     });
     
     if (!response.ok) {
-      console.error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+      console.error(`Failed to fetch ${url}: ${response.status}`);
       return null;
     }
     
     const html = await response.text();
-    console.log(`Successfully fetched HTML for ${url}, length: ${html.length}`);
-    
     const article = await extractArticleContent(url, html);
+    
     if (!article) {
       console.error(`Failed to extract article content from ${url}`);
       return null;
@@ -297,11 +221,7 @@ async function analyzeArticle(url: string) {
 
     const paragraphs = contentDiv.querySelectorAll('p');
     const images = contentDiv.querySelectorAll('img');
-    const videos = contentDiv.querySelectorAll(
-      'iframe[src*="youtube"], iframe[src*="youtu.be"], ' +
-      'iframe[src*="vimeo"], video, ' +
-      'div[class*="video"], div[id*="video"]'
-    );
+    const videos = contentDiv.querySelectorAll('iframe[src*="youtube"], iframe[src*="vimeo"], video');
     
     const links = Array.from(contentDiv.querySelectorAll('a[href^="http"]'))
       .map(link => ({
@@ -313,12 +233,6 @@ async function analyzeArticle(url: string) {
 
     const textContent = article.textContent || '';
     const keyphrases = extractKeyphrases(textContent);
-
-    const metaDescription = dom.window.document.querySelector('meta[name="description"]')?.getAttribute('content') || 
-                           dom.window.document.querySelector('meta[property="og:description"]')?.getAttribute('content') || 
-                           '';
-
-    console.log(`Analysis complete for ${url}`);
 
     return {
       title: article.title || "",
@@ -333,9 +247,8 @@ async function analyzeArticle(url: string) {
       externalLinks: links,
       externalLinksCount: links.length,
       metaTitle: article.title || "",
-      metaDescription,
+      metaDescription: "",
       keywords: keyphrases,
-      readabilityScore: Math.round(article.length / textContent.split(/\s+/).length * 10),
       headingStructure,
     };
   } catch (error) {
@@ -343,66 +256,6 @@ async function analyzeArticle(url: string) {
     return null;
   }
 }
-
-const generateSuggestedTitles = (keywords: string[], articles: any[]): string[] => {
-  // Extract common themes and topics from articles
-  const topics = articles.flatMap(article => article.keywords || []);
-  const mainKeyword = keywords[0] || '';
-  
-  // Generate titles following the guidelines:
-  // - Start with action verb
-  // - Include keyword
-  // - 50-60 characters
-  const actionVerbs = ['Master', 'Discover', 'Unlock', 'Implement', 'Transform', 'Optimize', 'Leverage'];
-  
-  return actionVerbs.map(verb => {
-    const title = `${verb} ${mainKeyword} to Enhance Your Business Strategy`;
-    return title.length > 60 ? title.substring(0, 57) + '...' : title;
-  }).slice(0, 5); // Return top 5 suggestions
-};
-
-const generateSuggestedDescriptions = (keywords: string[], articles: any[]): string[] => {
-  const mainKeyword = keywords[0] || '';
-  
-  // Identify search intent from articles
-  const isHowTo = articles.some(article => 
-    article.title?.toLowerCase().includes('how to') || 
-    article.metaDescription?.toLowerCase().includes('learn') ||
-    article.metaDescription?.toLowerCase().includes('guide')
-  );
-  
-  const isComparison = articles.some(article =>
-    article.title?.toLowerCase().includes('vs') ||
-    article.title?.toLowerCase().includes('comparison') ||
-    article.metaDescription?.toLowerCase().includes('compare')
-  );
-  
-  const descriptions = [];
-  
-  if (isHowTo) {
-    descriptions.push(
-      `Learn essential ${mainKeyword} strategies and best practices in this comprehensive guide. Discover expert tips to improve your approach.`,
-      `Master the fundamentals of ${mainKeyword} with our step-by-step guide. Perfect for beginners and experienced professionals alike.`
-    );
-  } else if (isComparison) {
-    descriptions.push(
-      `Compare different ${mainKeyword} approaches and find the perfect solution for your needs. In-depth analysis of top options.`,
-      `Explore the pros and cons of various ${mainKeyword} solutions. Make an informed decision with our detailed comparison.`
-    );
-  } else {
-    descriptions.push(
-      `Enhance your understanding of ${mainKeyword} with our expert insights. Practical tips and strategies for better results.`,
-      `Discover proven ${mainKeyword} techniques that drive success. Expert advice and actionable strategies included.`
-    );
-  }
-  
-  // Ensure descriptions are between 110-160 characters
-  return descriptions.map(desc => 
-    desc.length > 160 ? desc.substring(0, 157) + '...' : 
-    desc.length < 110 ? desc + ' Comprehensive insights and expert analysis included.' : 
-    desc
-  );
-};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -413,7 +266,8 @@ serve(async (req) => {
     const { urls } = await req.json();
     console.log('Analyzing URLs:', urls);
     
-    const batchSize = 3;
+    // Process articles in smaller batches to avoid resource limits
+    const batchSize = 2;
     const results = [];
     const failedUrls = [];
     
@@ -432,8 +286,9 @@ serve(async (req) => {
       
       results.push(...batchResults.filter(result => result !== null));
       
+      // Add delay between batches to prevent resource exhaustion
       if (i + batchSize < urls.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
 
@@ -441,6 +296,7 @@ serve(async (req) => {
       throw new Error('Failed to analyze any of the provided articles');
     }
 
+    // Calculate link frequency
     const linkFrequency: { [key: string]: { count: number; text: string; domain: string } } = {};
     results.forEach(analysis => {
       analysis.externalLinks.forEach(link => {
@@ -464,15 +320,7 @@ serve(async (req) => {
           frequency: data.count
         }))
         .sort((a, b) => b.frequency - a.frequency)
-        .slice(0, 5),
-      suggestedTitles: generateSuggestedTitles(
-        Array.from(new Set(results.flatMap(a => a.keywords))).slice(0, 3),
-        results
-      ),
-      suggestedDescriptions: generateSuggestedDescriptions(
-        Array.from(new Set(results.flatMap(a => a.keywords))).slice(0, 3),
-        results
-      )
+        .slice(0, 5)
     };
 
     return new Response(
