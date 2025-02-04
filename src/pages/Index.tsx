@@ -6,6 +6,8 @@ import { AnalysisReport } from "@/components/SEOWizard/AnalysisReport";
 import { supabase } from "@/integrations/supabase/client";
 import type { Article, ArticleAnalysis, IdealStructure } from "@/types/seo";
 import { useToast } from "@/components/ui/use-toast";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const TOTAL_STEPS = 7;
 
@@ -18,6 +20,7 @@ const Index = () => {
   const [selectedArticles, setSelectedArticles] = useState<Article[]>([]);
   const [analyses, setAnalyses] = useState<ArticleAnalysis[]>([]);
   const [idealStructure, setIdealStructure] = useState<IdealStructure | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const { toast } = useToast();
 
   const handleKeywordSubmit = async (data: {
@@ -35,6 +38,8 @@ const Index = () => {
 
   const handleArticleSelection = async (selected: Article[]) => {
     setSelectedArticles(selected);
+    setIsAnalyzing(true);
+    setCurrentStep(3); // Show loading state
     
     try {
       const { data, error } = await supabase.functions.invoke('analyze-articles', {
@@ -53,8 +58,29 @@ const Index = () => {
         description: "Failed to analyze the selected articles. Please try again.",
         variant: "destructive",
       });
+      setCurrentStep(2); // Go back to article selection on error
+    } finally {
+      setIsAnalyzing(false);
     }
   };
+
+  const LoadingState = () => (
+    <Card className="p-6 space-y-6">
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-3/4" />
+        <Skeleton className="h-4 w-1/2" />
+      </div>
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-4 w-4/6" />
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12">
@@ -71,6 +97,8 @@ const Index = () => {
           {currentStep === 2 && articles.length > 0 && (
             <ArticleList articles={articles} onSubmit={handleArticleSelection} />
           )}
+
+          {currentStep === 3 && isAnalyzing && <LoadingState />}
 
           {currentStep === 4 && idealStructure && (
             <AnalysisReport
