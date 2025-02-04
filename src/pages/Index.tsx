@@ -21,6 +21,7 @@ const Index = () => {
   const [analyses, setAnalyses] = useState<ArticleAnalysis[]>([]);
   const [idealStructure, setIdealStructure] = useState<IdealStructure | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisStatus, setAnalysisStatus] = useState("");
   const { toast } = useToast();
 
   const handleKeywordSubmit = async (data: {
@@ -39,11 +40,15 @@ const Index = () => {
   const handleArticleSelection = async (selected: Article[]) => {
     setSelectedArticles(selected);
     setIsAnalyzing(true);
-    setCurrentStep(3); // Show loading state
+    setCurrentStep(3);
     
     try {
+      setAnalysisStatus("Fetching article contents...");
       const { data, error } = await supabase.functions.invoke('analyze-articles', {
-        body: { urls: selected.map(article => article.url) }
+        body: { 
+          urls: selected.map(article => article.url),
+          keyword: keyword // Pass the keyword for better context
+        }
       });
 
       if (error) throw error;
@@ -58,26 +63,36 @@ const Index = () => {
         description: "Failed to analyze the selected articles. Please try again.",
         variant: "destructive",
       });
-      setCurrentStep(2); // Go back to article selection on error
+      setCurrentStep(2);
     } finally {
       setIsAnalyzing(false);
+      setAnalysisStatus("");
     }
   };
 
   const LoadingState = () => (
     <Card className="p-6 space-y-6">
-      <div className="space-y-2">
-        <Skeleton className="h-8 w-3/4" />
-        <Skeleton className="h-4 w-1/2" />
-      </div>
       <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="space-y-2">
-            <Skeleton className="h-6 w-full" />
-            <Skeleton className="h-4 w-5/6" />
-            <Skeleton className="h-4 w-4/6" />
+        <div className="flex items-center space-x-4">
+          <div className="w-8 h-8 rounded-full bg-blue-100 animate-pulse flex items-center justify-center">
+            <div className="w-4 h-4 rounded-full bg-blue-500 animate-ping" />
           </div>
-        ))}
+          <div className="flex-1">
+            <Skeleton className="h-6 w-3/4 mb-2" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
+        </div>
+        <div className="pl-12">
+          <p className="text-sm text-muted-foreground">{analysisStatus}</p>
+          <div className="mt-4 space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="space-y-2">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-3 w-5/6" />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </Card>
   );

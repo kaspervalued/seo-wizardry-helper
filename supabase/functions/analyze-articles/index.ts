@@ -18,7 +18,7 @@ const extractDomain = (url: string): string => {
   }
 };
 
-async function extractKeyPhrasesWithAI(content: string): Promise<string[]> {
+async function extractKeyPhrasesWithAI(content: string, keyword: string): Promise<string[]> {
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -31,7 +31,7 @@ async function extractKeyPhrasesWithAI(content: string): Promise<string[]> {
         messages: [
           {
             role: 'system',
-            content: 'You are an SEO expert that extracts key phrases from content. Extract 5-7 specific, meaningful key phrases that best represent the main topics and concepts in the text. Focus on technical terms, industry-specific phrases, and important concepts. Avoid generic words.'
+            content: `You are an SEO expert that extracts key phrases from content. Extract 5-7 specific, meaningful key phrases that best represent the main topics and concepts in the text. Focus on technical terms, industry-specific phrases, and important concepts related to "${keyword}". Avoid generic words.`
           },
           {
             role: 'user',
@@ -43,12 +43,10 @@ async function extractKeyPhrasesWithAI(content: string): Promise<string[]> {
     });
 
     const data = await response.json();
-    const keyPhrases = data.choices[0].message.content
+    return data.choices[0].message.content
       .split('\n')
       .map(phrase => phrase.replace(/^[-\d.\s]+/, '').trim())
       .filter(Boolean);
-
-    return keyPhrases;
   } catch (error) {
     console.error('Error extracting key phrases with AI:', error);
     return [];
@@ -93,7 +91,7 @@ async function analyzeArticle(url: string) {
       }))
       .filter(link => link.domain !== extractDomain(url));
 
-    const keywords = await extractKeyPhrasesWithAI(textContent);
+    const keywords = await extractKeyPhrasesWithAI(textContent, title);
 
     const headingStructure = Array.from(headings).map(heading => ({
       level: heading.tagName.toLowerCase(),
@@ -123,7 +121,7 @@ async function analyzeArticle(url: string) {
   }
 }
 
-async function generateIdealStructure(keyword: string, analyses: any[]) {
+async function generateIdealStructure(analyses: any[], keyword: string) {
   try {
     // Calculate target word count
     const validWordCounts = analyses
@@ -134,48 +132,11 @@ async function generateIdealStructure(keyword: string, analyses: any[]) {
       validWordCounts.reduce((sum, count) => sum + count, 0) / validWordCounts.length
     );
 
-    // Collect all keywords from analyses
+    // Collect all keywords from analyses for context
     const allKeywords = analyses.flatMap(a => a.keywords);
     const keywordContext = allKeywords.join('\n');
 
-    // Use OpenAI to synthesize recommended keywords
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `You are an SEO expert that analyzes key phrases and synthesizes them into recommended keywords. 
-            Focus on specific, meaningful phrases that are most relevant to the main topic.
-            If the main keyword contains "vs" or "versus", ensure recommendations include comparison-related terms.
-            Avoid generic words and ensure all recommendations are highly specific to the topic.`
-          },
-          {
-            role: 'user',
-            content: `Main keyword: "${keyword}"
-            
-            Here are the key phrases found in competitor articles:
-            ${keywordContext}
-            
-            Analyze these key phrases and provide 5-7 most important recommended keywords that should be included in a new article about "${keyword}". Focus on specific, technical terms and important concepts.`
-          }
-        ],
-        temperature: 0.3,
-      }),
-    });
-
-    const data = await response.json();
-    const recommendedKeywords = data.choices[0].message.content
-      .split('\n')
-      .map(phrase => phrase.replace(/^[-\d.\s]+/, '').trim())
-      .filter(Boolean);
-
-    // Generate titles and descriptions
+    // Generate titles and descriptions with OpenAI
     const titleResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -205,7 +166,7 @@ async function generateIdealStructure(keyword: string, analyses: any[]) {
             
             Context:
             - Main keyword: ${keyword}
-            - Related key phrases: ${recommendedKeywords.join(', ')}
+            - Related key phrases: ${keywordContext}
             - Target word count: ${targetWordCount} words
             
             Format the response as JSON with arrays "titles" and "descriptions".`
@@ -219,6 +180,43 @@ async function generateIdealStructure(keyword: string, analyses: any[]) {
     const { titles: suggestedTitles, descriptions: suggestedDescriptions } = JSON.parse(
       titleData.choices[0].message.content
     );
+
+    // Generate recommended keywords with OpenAI
+    const keywordResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an SEO expert that analyzes key phrases and synthesizes them into recommended keywords.
+            Focus on specific, meaningful phrases that are most relevant to the main topic.
+            If the main keyword contains "vs" or "versus", ensure recommendations include comparison-related terms.
+            Avoid generic words and ensure all recommendations are highly specific to the topic.`
+          },
+          {
+            role: 'user',
+            content: `Main keyword: "${keyword}"
+            
+            Here are the key phrases found in competitor articles:
+            ${keywordContext}
+            
+            Analyze these key phrases and provide 5-7 most important recommended keywords that should be included in a new article about "${keyword}". Focus on specific, technical terms and important concepts.`
+          }
+        ],
+        temperature: 0.3,
+      }),
+    });
+
+    const keywordData = await keywordResponse.json();
+    const recommendedKeywords = keywordData.choices[0].message.content
+      .split('\n')
+      .map(phrase => phrase.replace(/^[-\d.\s]+/, '').trim())
+      .filter(Boolean);
 
     return {
       targetWordCount,
@@ -276,7 +274,7 @@ serve(async (req) => {
       throw new Error('Failed to analyze any of the provided articles');
     }
 
-    const idealStructure = await generateIdealStructure(keyword, results);
+    const idealStructure = await generateIdealStructure(results, keyword);
 
     return new Response(
       JSON.stringify({
