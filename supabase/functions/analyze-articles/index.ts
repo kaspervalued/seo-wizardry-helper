@@ -8,8 +8,9 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
@@ -19,8 +20,12 @@ serve(async (req) => {
     const analyses = await Promise.all(
       urls.map(async (url) => {
         try {
+          console.log(`Fetching content for ${url}`);
           // Fetch the HTML content
           const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+          }
           const html = await response.text();
           
           // Parse the HTML using JSDOM
@@ -34,6 +39,8 @@ serve(async (req) => {
           if (!article) {
             throw new Error(`Failed to extract article from ${url}`);
           }
+
+          console.log(`Successfully extracted article from ${url}`);
 
           // Create a temporary div to parse HTML content
           const contentDiv = document.createElement('div');
@@ -82,6 +89,8 @@ serve(async (req) => {
                                 document.querySelector('meta[property="og:description"]')?.getAttribute('content') || 
                                 '';
 
+          console.log(`Analysis complete for ${url}`);
+
           return {
             title: article.title || "",
             url,
@@ -100,32 +109,52 @@ serve(async (req) => {
           };
         } catch (error) {
           console.error(`Error analyzing article ${url}:`, error);
-          return null;
+          return {
+            title: url,
+            url,
+            wordCount: 0,
+            characterCount: 0,
+            headingsCount: 0,
+            paragraphsCount: 0,
+            imagesCount: 0,
+            videosCount: 0,
+            externalLinksCount: 0,
+            metaTitle: "",
+            metaDescription: "",
+            keywords: [],
+            readabilityScore: 0,
+            headingStructure: [],
+            error: error.message
+          };
         }
       })
     );
 
     // Filter out failed analyses
-    const validAnalyses = analyses.filter(analysis => analysis !== null);
+    const validAnalyses = analyses.filter(analysis => !analysis.error);
+
+    if (validAnalyses.length === 0) {
+      throw new Error('Failed to analyze any of the provided articles');
+    }
 
     // Generate ideal structure based on the analyses
     const idealStructure = {
       targetWordCount: Math.round(
-        validAnalyses.reduce((sum, a) => sum + (a?.wordCount || 0), 0) / validAnalyses.length
+        validAnalyses.reduce((sum, a) => sum + a.wordCount, 0) / validAnalyses.length
       ),
       targetParagraphCount: Math.round(
-        validAnalyses.reduce((sum, a) => sum + (a?.paragraphsCount || 0), 0) / validAnalyses.length
+        validAnalyses.reduce((sum, a) => sum + a.paragraphsCount, 0) / validAnalyses.length
       ),
       targetImageCount: Math.round(
-        validAnalyses.reduce((sum, a) => sum + (a?.imagesCount || 0), 0) / validAnalyses.length
+        validAnalyses.reduce((sum, a) => sum + a.imagesCount, 0) / validAnalyses.length
       ),
       recommendedHeadingsCount: Math.round(
-        validAnalyses.reduce((sum, a) => sum + (a?.headingsCount || 0), 0) / validAnalyses.length
+        validAnalyses.reduce((sum, a) => sum + a.headingsCount, 0) / validAnalyses.length
       ),
       recommendedKeywords: Array.from(
-        new Set(validAnalyses.flatMap(a => a?.keywords || []))
+        new Set(validAnalyses.flatMap(a => a.keywords))
       ).slice(0, 10),
-      suggestedHeadingStructure: validAnalyses[0]?.headingStructure || [],
+      suggestedHeadingStructure: validAnalyses[0].headingStructure,
     };
 
     return new Response(
@@ -141,9 +170,12 @@ serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error in analyze-articles function:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: error.message,
+        details: error.stack
+      }),
       {
         status: 500,
         headers: {
