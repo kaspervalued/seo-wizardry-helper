@@ -1,6 +1,7 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { JSDOM } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
+import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
@@ -67,7 +68,7 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
       .filter(Boolean);
   } catch (error) {
     console.error('Error in extractKeyPhrasesWithAI:', error);
-    throw error; // Re-throw to handle in the main function
+    throw error;
   }
 }
 
@@ -85,6 +86,11 @@ async function fetchWithRetry(url: string, retries = 3, timeout = 10000) {
       });
       
       clearTimeout(id);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       return response;
     } catch (error) {
       console.error(`Attempt ${i + 1} failed for ${url}:`, error);
@@ -100,17 +106,11 @@ async function analyzeArticle(url: string, keyword: string) {
   
   try {
     const response = await fetchWithRetry(url);
-    
-    if (!response.ok) {
-      console.error(`Failed to fetch ${url}: ${response.status}`);
-      return null;
-    }
-    
     const html = await response.text();
-    const dom = new JSDOM(html);
-    const document = dom.window.document;
+    const parser = new DOMParser();
+    const document = parser.parseFromString(html, "text/html");
 
-    if (!document || !document.body) {
+    if (!document) {
       console.error(`Failed to parse document for ${url}`);
       return null;
     }
@@ -120,7 +120,7 @@ async function analyzeArticle(url: string, keyword: string) {
     
     // Limit content extraction to main content areas
     const mainContent = document.querySelector('main, article, [role="main"], #content, .content');
-    const textContent = (mainContent?.textContent || document.body.textContent || '').substring(0, 8000); // Limit content length
+    const textContent = (mainContent?.textContent || document.body?.textContent || '').substring(0, 8000); // Limit content length
     
     if (!textContent) {
       console.error(`No content extracted from ${url}`);
@@ -169,7 +169,7 @@ async function analyzeArticle(url: string, keyword: string) {
     };
   } catch (error) {
     console.error(`Error analyzing article ${url}:`, error);
-    throw error; // Re-throw to handle in the main function
+    throw error;
   }
 }
 
@@ -266,7 +266,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
 
   } catch (error) {
     console.error('Error in generateIdealStructure:', error);
-    throw error; // Re-throw to handle in the main handler
+    throw error;
   }
 }
 
@@ -326,7 +326,6 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in analyze-articles function:', error);
     
-    // Return a proper error response with CORS headers
     return new Response(
       JSON.stringify({ 
         error: error.message,
