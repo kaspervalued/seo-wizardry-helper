@@ -1,19 +1,18 @@
 
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+const diffbotToken = Deno.env.get('DIFFBOT_API_TOKEN');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Validate OpenAI API key at startup
-if (!openAIApiKey) {
-  console.error('OPENAI_API_KEY is not set');
-  throw new Error('OPENAI_API_KEY environment variable is required');
+if (!openAIApiKey || !diffbotToken) {
+  console.error('Missing required API keys');
+  throw new Error('Required API keys not set');
 }
 
 const extractDomain = (url: string): string => {
@@ -27,7 +26,6 @@ const extractDomain = (url: string): string => {
 
 async function extractKeyPhrasesWithAI(content: string, keyword: string): Promise<string[]> {
   try {
-    // Add delay to prevent rate limiting
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     console.log('Making request to OpenAI API...');
@@ -46,7 +44,7 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
           },
           {
             role: 'user',
-            content: content.substring(0, 4000) // Limit content length
+            content: content.substring(0, 4000)
           }
         ],
         temperature: 0.3,
@@ -72,100 +70,82 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
   }
 }
 
-async function fetchWithRetry(url: string, retries = 3, timeout = 10000) {
+async function fetchWithDiffbot(url: string, retries = 3): Promise<any> {
+  const diffbotUrl = `https://api.diffbot.com/v3/article?token=${diffbotToken}&url=${encodeURIComponent(url)}`;
+  
   for (let i = 0; i < retries; i++) {
     try {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeout);
-      
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-      });
-      
-      clearTimeout(id);
+      console.log(`Attempting to fetch article with Diffbot (attempt ${i + 1}/${retries})`);
+      const response = await fetch(diffbotUrl);
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`Diffbot API error: ${response.status}`);
       }
       
-      return response;
+      const data = await response.json();
+      
+      if (!data.objects?.[0]) {
+        throw new Error('No article data returned from Diffbot');
+      }
+      
+      return data.objects[0];
     } catch (error) {
-      console.error(`Attempt ${i + 1} failed for ${url}:`, error);
+      console.error(`Diffbot API error (attempt ${i + 1}):`, error);
       if (i === retries - 1) throw error;
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // Exponential backoff
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
     }
   }
-  throw new Error(`Failed to fetch ${url} after ${retries} attempts`);
+  
+  throw new Error(`Failed to fetch article after ${retries} attempts`);
 }
 
 async function analyzeArticle(url: string, keyword: string) {
   console.log(`Starting analysis for ${url}`);
   
   try {
-    const response = await fetchWithRetry(url);
-    const html = await response.text();
-    const parser = new DOMParser();
-    const document = parser.parseFromString(html, "text/html");
-
-    if (!document) {
-      console.error(`Failed to parse document for ${url}`);
-      return null;
-    }
-
-    const title = document.querySelector('title')?.textContent || '';
-    const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content') || '';
+    const article = await fetchWithDiffbot(url);
     
-    // Limit content extraction to main content areas
-    const mainContent = document.querySelector('main, article, [role="main"], #content, .content');
-    const textContent = (mainContent?.textContent || document.body?.textContent || '').substring(0, 8000); // Limit content length
-    
-    if (!textContent) {
+    if (!article.text) {
       console.error(`No content extracted from ${url}`);
       return null;
     }
 
+    const textContent = article.text;
     const wordCount = textContent.split(/\s+/).length;
-    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
-    const paragraphs = Array.from(document.querySelectorAll('p'));
-    const images = Array.from(document.querySelectorAll('img'));
-    const videos = Array.from(document.querySelectorAll('video, iframe[src*="youtube"], iframe[src*="vimeo"]'));
-    const links = Array.from(document.querySelectorAll('a[href^="http"]'))
-      .slice(0, 20) // Limit number of links
-      .map(link => ({
-        url: link.getAttribute('href') || '',
-        text: link.textContent?.trim() || '',
-        domain: extractDomain(link.getAttribute('href') || '')
-      }))
-      .filter(link => link.domain !== extractDomain(url));
-
-    const headingStructure = headings.slice(0, 15).map(heading => ({
-      level: heading.tagName.toLowerCase(),
-      text: heading.textContent?.trim() || ''
-    }));
-
+    
     // Add delay before AI processing
     await new Promise(resolve => setTimeout(resolve, 1000));
     const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
 
+    // Map Diffbot's structured data to our analysis format
     return {
-      title,
-      url,
+      title: article.title || '',
+      url: url,
       domain: extractDomain(url),
       wordCount,
       characterCount: textContent.length,
-      headingsCount: headings.length,
-      paragraphsCount: paragraphs.length,
-      imagesCount: images.length,
-      videosCount: videos.length,
-      externalLinks: links,
-      externalLinksCount: links.length,
-      metaTitle: title,
-      metaDescription: metaDesc,
+      headingsCount: article.numPages || 1,
+      paragraphsCount: (article.text.match(/\n\n/g) || []).length + 1,
+      imagesCount: (article.images || []).length,
+      videosCount: (article.videos || []).length,
+      externalLinks: (article.links || [])
+        .filter(link => link.href && extractDomain(link.href) !== extractDomain(url))
+        .slice(0, 20)
+        .map(link => ({
+          url: link.href,
+          text: link.text || '',
+          domain: extractDomain(link.href)
+        })),
+      externalLinksCount: (article.links || []).length,
+      metaTitle: article.title || '',
+      metaDescription: article.meta?.description || '',
       keywords,
-      headingStructure,
+      headingStructure: article.sections
+        ? article.sections.map((section, index) => ({
+            level: `h${index + 1}`,
+            text: section.heading || ''
+          }))
+        : [],
     };
   } catch (error) {
     console.error(`Error analyzing article ${url}:`, error);
@@ -183,13 +163,11 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       validWordCounts.reduce((sum, count) => sum + count, 0) / validWordCounts.length
     );
 
-    // Prepare concise context from analyses
     const articlesContext = analyses.map(a => `
       Title: ${a.title}
       Key phrases: ${a.keywords.slice(0, 5).join(', ')}
     `).join('\n');
 
-    // Add delay before AI call
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     console.log('Making request to OpenAI API for ideal structure...');
@@ -242,7 +220,6 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       };
     }
 
-    // Get common external links (limited)
     const commonLinks = analyses
       .flatMap(a => a.externalLinks.slice(0, 5))
       .reduce((acc: any[], link) => {
@@ -271,7 +248,6 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
