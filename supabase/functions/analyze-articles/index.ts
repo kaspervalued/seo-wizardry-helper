@@ -125,20 +125,51 @@ async function analyzeArticle(url: string, keyword: string) {
 
     // Extract and process links
     const articleDomain = extractDomain(url);
-    const links = article.links || [];
-    console.log('Processing links:', links);
+    console.log('Article domain:', articleDomain);
+
+    // Get links from both the links array and any HTML anchor tags
+    const links = [];
+    
+    // Process links from Diffbot's links array
+    if (article.links && Array.isArray(article.links)) {
+      links.push(...article.links);
+    }
+    
+    // Process links from HTML content if available
+    if (article.html) {
+      const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>([^<]*)<\/a>/gi;
+      let match;
+      while ((match = linkRegex.exec(article.html)) !== null) {
+        links.push({
+          href: match[1],
+          text: match[2].trim()
+        });
+      }
+    }
+
+    console.log('Found links:', links);
 
     const externalLinks = links
       .filter(link => {
         if (!link.href) return false;
-        const linkDomain = extractDomain(link.href);
-        return linkDomain && linkDomain !== articleDomain;
+        try {
+          const linkDomain = extractDomain(link.href);
+          return linkDomain && 
+                 linkDomain !== articleDomain && 
+                 link.href.startsWith('http');
+        } catch (error) {
+          console.error('Error processing link:', link, error);
+          return false;
+        }
       })
-      .map(link => ({
-        url: link.href,
-        text: link.text || link.title || extractDomain(link.href),
-        domain: extractDomain(link.href)
-      }));
+      .map(link => {
+        const domain = extractDomain(link.href);
+        return {
+          url: link.href,
+          text: link.text || link.title || domain,
+          domain: domain
+        };
+      });
 
     console.log('Extracted external links:', externalLinks);
 
