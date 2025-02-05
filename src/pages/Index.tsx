@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { WizardProgress } from "@/components/SEOWizard/WizardProgress";
 import { KeywordForm } from "@/components/SEOWizard/KeywordForm";
@@ -8,6 +9,8 @@ import type { Article, ArticleAnalysis, IdealStructure } from "@/types/seo";
 import { useToast } from "@/components/ui/use-toast";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { AlertCircle } from "lucide-react";
 
 const TOTAL_STEPS = 7;
 
@@ -22,6 +25,7 @@ const Index = () => {
   const [idealStructure, setIdealStructure] = useState<IdealStructure | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const handleKeywordSubmit = async (data: {
@@ -38,29 +42,37 @@ const Index = () => {
   };
 
   const handleArticleSelection = async (selected: Article[]) => {
+    setError(null);
     setSelectedArticles(selected);
     setIsAnalyzing(true);
     setCurrentStep(3);
     
     try {
       setAnalysisStatus("Fetching article contents... (This might take 1-2 minutes)\nDon't close this tab, we're analyzing everything in detail!");
-      const { data, error } = await supabase.functions.invoke('analyze-articles', {
+      const { data, error: functionError } = await supabase.functions.invoke('analyze-articles', {
         body: { 
           urls: selected.map(article => article.url),
           keyword: keyword
         }
       });
 
-      if (error) throw error;
+      if (functionError) {
+        throw new Error(functionError.message || 'Failed to analyze articles');
+      }
+
+      if (!data?.analyses || !data?.idealStructure) {
+        throw new Error('Invalid response from analysis');
+      }
 
       setAnalyses(data.analyses);
       setIdealStructure(data.idealStructure);
       setCurrentStep(4);
     } catch (error) {
       console.error('Error analyzing articles:', error);
+      setError(error instanceof Error ? error.message : 'Failed to analyze articles');
       toast({
-        title: "Error",
-        description: "Failed to analyze the selected articles. Please try again.",
+        title: "Analysis Error",
+        description: "Failed to analyze the selected articles. Please try again with fewer articles or check if the articles are accessible.",
         variant: "destructive",
       });
       setCurrentStep(2);
@@ -97,6 +109,25 @@ const Index = () => {
     </Card>
   );
 
+  const ErrorState = () => (
+    <Card className="p-6">
+      <div className="flex flex-col items-center space-y-4 text-center">
+        <AlertCircle className="h-12 w-12 text-red-500" />
+        <h3 className="text-lg font-semibold">Analysis Failed</h3>
+        <p className="text-sm text-muted-foreground">{error}</p>
+        <Button 
+          onClick={() => {
+            setError(null);
+            setCurrentStep(2);
+          }}
+          variant="outline"
+        >
+          Try Again
+        </Button>
+      </div>
+    </Card>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12">
       <div className="container max-w-4xl mx-auto px-4">
@@ -115,7 +146,9 @@ const Index = () => {
 
           {currentStep === 3 && isAnalyzing && <LoadingState />}
 
-          {currentStep === 4 && idealStructure && (
+          {error && <ErrorState />}
+
+          {currentStep === 4 && idealStructure && !error && (
             <AnalysisReport
               analyses={analyses}
               idealStructure={idealStructure}
