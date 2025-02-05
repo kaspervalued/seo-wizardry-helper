@@ -9,6 +9,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Validate OpenAI API key at startup
+if (!openAIApiKey) {
+  console.error('OPENAI_API_KEY is not set');
+  throw new Error('OPENAI_API_KEY environment variable is required');
+}
+
 const extractDomain = (url: string): string => {
   try {
     return new URL(url).hostname;
@@ -23,6 +29,7 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
     // Add delay to prevent rate limiting
     await new Promise(resolve => setTimeout(resolve, 1000));
 
+    console.log('Making request to OpenAI API...');
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -30,7 +37,7 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini', // Use the recommended model
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -46,17 +53,21 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
+      const errorData = await response.text();
+      console.error('OpenAI API error response:', errorData);
+      throw new Error(`OpenAI API error: ${response.status} - ${errorData}`);
     }
 
     const data = await response.json();
+    console.log('Successfully received OpenAI API response');
+    
     return data.choices[0].message.content
       .split('\n')
       .map(phrase => phrase.replace(/^[-\d.\s]+/, '').trim())
       .filter(Boolean);
   } catch (error) {
-    console.error('Error extracting key phrases with AI:', error);
-    return [];
+    console.error('Error in extractKeyPhrasesWithAI:', error);
+    throw error; // Re-throw to handle in the main function
   }
 }
 
@@ -130,14 +141,14 @@ async function analyzeArticle(url: string, keyword: string) {
       }))
       .filter(link => link.domain !== extractDomain(url));
 
-    // Add delay before AI processing
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
-
     const headingStructure = headings.slice(0, 15).map(heading => ({
       level: heading.tagName.toLowerCase(),
       text: heading.textContent?.trim() || ''
     }));
+
+    // Add delay before AI processing
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
 
     return {
       title,
@@ -158,7 +169,7 @@ async function analyzeArticle(url: string, keyword: string) {
     };
   } catch (error) {
     console.error(`Error analyzing article ${url}:`, error);
-    return null;
+    throw error; // Re-throw to handle in the main function
   }
 }
 
@@ -181,7 +192,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
     // Add delay before AI call
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    console.log('Generating ideal structure...');
+    console.log('Making request to OpenAI API for ideal structure...');
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -189,7 +200,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini', // Use the recommended model
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -210,8 +221,14 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       }),
     });
 
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('OpenAI API error response:', errorData);
+      throw new Error(`OpenAI API error: ${response.status} - ${errorData}`);
+    }
+
     const data = await response.json();
-    console.log('Received AI response');
+    console.log('Successfully received OpenAI API response for ideal structure');
 
     let recommendations;
     try {
@@ -220,7 +237,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       console.error('Error parsing OpenAI response:', parseError);
       recommendations = {
         title_suggestions: [`Complete Guide to ${keyword}`, `${keyword} Tutorial`, `Understanding ${keyword}`],
-        meta_descriptions: [`Learn everything about ${keyword} in our comprehensive guide.`],
+        meta_descriptions: [`3 meta descriptions with keyword`],
         recommended_keywords: [keyword, 'guide', 'tutorial', 'tips'],
       };
     }
@@ -246,15 +263,10 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       recommendedKeywords: recommendations.recommended_keywords || [],
       recommendedExternalLinks: commonLinks,
     };
+
   } catch (error) {
-    console.error('Error generating ideal structure:', error);
-    return {
-      targetWordCount: 1500,
-      suggestedTitles: [`Complete Guide to ${keyword}`, `${keyword} Tutorial`],
-      suggestedDescriptions: [`Learn everything about ${keyword} in our guide.`],
-      recommendedKeywords: [keyword, 'guide', 'tutorial'],
-      recommendedExternalLinks: [],
-    };
+    console.error('Error in generateIdealStructure:', error);
+    throw error; // Re-throw to handle in the main handler
   }
 }
 
@@ -265,6 +277,8 @@ serve(async (req) => {
   }
 
   try {
+    console.log('Received request to analyze-articles function');
+    
     const { urls, keyword } = await req.json();
     
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
@@ -295,6 +309,8 @@ serve(async (req) => {
 
     const idealStructure = await generateIdealStructure(results, keyword);
 
+    console.log('Analysis completed successfully');
+
     return new Response(
       JSON.stringify({
         analyses: results,
@@ -309,6 +325,8 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error('Error in analyze-articles function:', error);
+    
+    // Return a proper error response with CORS headers
     return new Response(
       JSON.stringify({ 
         error: error.message,
