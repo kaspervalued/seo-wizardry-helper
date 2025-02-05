@@ -39,7 +39,13 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
         messages: [
           {
             role: 'system',
-            content: `Extract 5-7 specific key phrases from the content related to "${keyword}". Focus on technical terms and industry-specific phrases.`
+            content: `Analyze the content and extract 5-7 key phrases that are:
+            1. Most frequently mentioned across the text
+            2. Highly relevant to the main topic "${keyword}"
+            3. Technical or industry-specific terms
+            
+            Format each key phrase as a simple string without any additional explanation or formatting.
+            Return only the key phrases, one per line.`
           },
           {
             role: 'user',
@@ -61,7 +67,7 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
     
     return data.choices[0].message.content
       .split('\n')
-      .map(phrase => phrase.replace(/^[-\d.\s]+/, '').trim())
+      .map(phrase => phrase.trim())
       .filter(Boolean);
   } catch (error) {
     console.error('Error in extractKeyPhrasesWithAI:', error);

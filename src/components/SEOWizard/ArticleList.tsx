@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -25,8 +24,11 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
     });
   };
 
+  const handleToggleAll = (checked: boolean) => {
+    setSelectedArticles(checked ? [...articles] : []);
+  };
+
   const handleSubmit = async () => {
-    // Validate selected articles immediately before submission
     if (selectedArticles.length === 0) {
       toast({
         title: "Error",
@@ -36,7 +38,6 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
       return;
     }
 
-    // Ensure we're passing the current state
     const currentSelected = [...selectedArticles];
     if (currentSelected.length > 0) {
       onSubmit(currentSelected);
@@ -52,6 +53,15 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
   return (
     <div className="space-y-6">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+        <div className="p-4 border-b">
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              checked={selectedArticles.length === articles.length}
+              onCheckedChange={(checked) => handleToggleAll(checked as boolean)}
+            />
+            <span className="text-sm font-medium">Select All Articles</span>
+          </div>
+        </div>
         <ScrollArea className="h-[400px] rounded-md border p-4">
           <div className="space-y-4">
             {articles.map((article, index) => (
