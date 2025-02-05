@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
@@ -117,43 +116,54 @@ async function analyzeArticle(url: string, keyword: string) {
     await new Promise(resolve => setTimeout(resolve, 1000));
     const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
 
-    // Map Diffbot's structured data to our analysis format
+    // Extract and process links
+    const links = article.links || [];
+    const externalLinks = links
+      .filter(link => {
+        if (!link.href) return false;
+        const linkDomain = extractDomain(link.href);
+        const articleDomain = extractDomain(url);
+        return linkDomain && linkDomain !== articleDomain;
+      })
+      .map(link => ({
+        url: link.href,
+        text: link.anchorText || link.href,
+        domain: extractDomain(link.href)
+      }));
+
+    // Extract and process heading structure
+    const headings = [];
+    if (article.html) {
+      const headingMatches = article.html.match(/<h[1-6][^>]*>.*?<\/h[1-6]>/gi) || [];
+      headingMatches.forEach(match => {
+        const level = match.match(/<h([1-6])/i)?.[1] || '1';
+        const text = match.replace(/<[^>]+>/g, '').trim();
+        if (text) {
+          headings.push({
+            level: `h${level}`,
+            text: text
+          });
+        }
+      });
+    }
+
     return {
       title: article.title || '',
       url: url,
       domain: extractDomain(url),
       wordCount,
       characterCount: textContent.length,
-      headingsCount: article.numHeadings || 0,
+      headingsCount: headings.length,
       paragraphsCount: article.numPages || 1,
       imagesCount: (article.images || []).length,
       videosCount: (article.videos || []).length,
-      externalLinks: (article.links || [])
-        .filter(link => {
-          if (!link.href) return false;
-          const linkDomain = extractDomain(link.href);
-          return linkDomain && linkDomain !== extractDomain(url);
-        })
-        .map(link => ({
-          url: link.href,
-          text: link.text || link.href,
-          domain: extractDomain(link.href)
-        })),
-      externalLinksCount: (article.links || []).filter(link => {
-        if (!link.href) return false;
-        const linkDomain = extractDomain(link.href);
-        return linkDomain && linkDomain !== extractDomain(url);
-      }).length,
+      externalLinks,
+      externalLinksCount: externalLinks.length,
       metaTitle: article.title || '',
       metaDescription: article.meta?.description || '',
       keywords,
       readabilityScore: 0,
-      headingStructure: (article.structuredText?.blocks || [])
-        .filter(block => block.type === 'header')
-        .map((block, index) => ({
-          level: `h${block.level || Math.min(index + 1, 6)}`,
-          text: block.text || ''
-        })),
+      headingStructure: headings,
     };
   } catch (error) {
     console.error(`Error analyzing article ${url}:`, error);
