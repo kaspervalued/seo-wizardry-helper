@@ -16,7 +16,8 @@ if (!openAIApiKey || !diffbotToken) {
 
 const extractDomain = (url: string): string => {
   try {
-    return new URL(url).hostname;
+    const urlObj = new URL(url);
+    return urlObj.hostname.replace(/^www\./, '');
   } catch (error) {
     console.error(`Error extracting domain from ${url}:`, error);
     return '';
@@ -123,19 +124,23 @@ async function analyzeArticle(url: string, keyword: string) {
     const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
 
     // Extract and process links
+    const articleDomain = extractDomain(url);
     const links = article.links || [];
+    console.log('Processing links:', links);
+
     const externalLinks = links
       .filter(link => {
         if (!link.href) return false;
         const linkDomain = extractDomain(link.href);
-        const articleDomain = extractDomain(url);
         return linkDomain && linkDomain !== articleDomain;
       })
       .map(link => ({
         url: link.href,
-        text: link.anchorText || link.href,
+        text: link.text || link.title || extractDomain(link.href),
         domain: extractDomain(link.href)
       }));
+
+    console.log('Extracted external links:', externalLinks);
 
     // Extract and process heading structure
     const headings = [];
@@ -156,7 +161,7 @@ async function analyzeArticle(url: string, keyword: string) {
     return {
       title: article.title || '',
       url: url,
-      domain: extractDomain(url),
+      domain: articleDomain,
       wordCount,
       characterCount: textContent.length,
       headingsCount: headings.length,
