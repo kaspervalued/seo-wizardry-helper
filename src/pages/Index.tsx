@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { WizardProgress } from "@/components/SEOWizard/WizardProgress";
 import { KeywordForm } from "@/components/SEOWizard/KeywordForm";
@@ -78,7 +77,7 @@ const Index = () => {
       console.error(`Attempt ${retryCount + 1} failed:`, error);
       
       if (retryCount < MAX_RETRIES) {
-        await delay(RETRY_DELAY * (retryCount + 1)); // Exponential backoff
+        await delay(RETRY_DELAY * (retryCount + 1));
         return invokeAnalysisFunction(retryCount + 1);
       }
       throw error;
@@ -95,15 +94,16 @@ const Index = () => {
       return;
     }
 
-    // First update the state
     setSelectedArticles(selected);
     setError(null);
     setIsAnalyzing(true);
     setCurrentStep(3);
     
     try {
-      // Make sure we use the selected articles passed as parameter
       setAnalysisStatus("Fetching article contents... (This might take 1-2 minutes)\nDon't close this tab, we're analyzing everything in detail!");
+      
+      // Wait for state to update before proceeding
+      await delay(100);
       
       const data = await invokeAnalysisFunction();
 

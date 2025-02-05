@@ -124,28 +124,29 @@ async function analyzeArticle(url: string, keyword: string) {
       domain: extractDomain(url),
       wordCount,
       characterCount: textContent.length,
-      headingsCount: article.numPages || 1,
-      paragraphsCount: (article.text.match(/\n\n/g) || []).length + 1,
+      headingsCount: (article.sections || []).length,
+      paragraphsCount: (textContent.match(/\n\n/g) || []).length + 1,
       imagesCount: (article.images || []).length,
       videosCount: (article.videos || []).length,
       externalLinks: (article.links || [])
-        .filter(link => link.href && extractDomain(link.href) !== extractDomain(url))
-        .slice(0, 20)
+        .filter(link => {
+          const linkDomain = extractDomain(link.href || '');
+          return linkDomain && linkDomain !== extractDomain(url);
+        })
         .map(link => ({
-          url: link.href,
-          text: link.text || '',
-          domain: extractDomain(link.href)
+          url: link.href || '',
+          text: link.text || link.href || '',
+          domain: extractDomain(link.href || '')
         })),
-      externalLinksCount: (article.links || []).length,
+      externalLinksCount: article.links ? article.links.length : 0,
       metaTitle: article.title || '',
       metaDescription: article.meta?.description || '',
       keywords,
-      headingStructure: article.sections
-        ? article.sections.map((section, index) => ({
-            level: `h${index + 1}`,
-            text: section.heading || ''
-          }))
-        : [],
+      readabilityScore: 0,
+      headingStructure: (article.sections || []).map((section, index) => ({
+        level: `h${Math.min(index + 1, 6)}`,
+        text: section.title || ''
+      })),
     };
   } catch (error) {
     console.error(`Error analyzing article ${url}:`, error);
