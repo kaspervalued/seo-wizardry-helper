@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -24,7 +25,8 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
     });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    // Validate selected articles immediately before submission
     if (selectedArticles.length === 0) {
       toast({
         title: "Error",
@@ -33,7 +35,18 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
       });
       return;
     }
-    onSubmit(selectedArticles);
+
+    // Ensure we're passing the current state
+    const currentSelected = [...selectedArticles];
+    if (currentSelected.length > 0) {
+      onSubmit(currentSelected);
+    } else {
+      toast({
+        title: "Error",
+        description: "Please select at least one article",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

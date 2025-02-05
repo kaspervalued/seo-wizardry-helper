@@ -95,12 +95,14 @@ const Index = () => {
       return;
     }
 
-    setError(null);
+    // First update the state
     setSelectedArticles(selected);
+    setError(null);
     setIsAnalyzing(true);
     setCurrentStep(3);
     
     try {
+      // Make sure we use the selected articles passed as parameter
       setAnalysisStatus("Fetching article contents... (This might take 1-2 minutes)\nDon't close this tab, we're analyzing everything in detail!");
       
       const data = await invokeAnalysisFunction();
