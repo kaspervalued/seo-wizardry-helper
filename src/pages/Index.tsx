@@ -44,20 +44,20 @@ const Index = () => {
 
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  const invokeAnalysisFunction = async (retryCount = 0): Promise<any> => {
-    if (!selectedArticles?.length || !keyword) {
+  const invokeAnalysisFunction = async (articles: Article[], keyword: string, retryCount = 0): Promise<any> => {
+    if (!articles?.length || !keyword) {
       throw new Error('Please select at least one article and provide a keyword');
     }
 
     try {
       console.log('Invoking analyze-articles with:', {
-        urls: selectedArticles.map(article => article.url),
+        urls: articles.map(article => article.url),
         keyword
       });
 
       const { data, error: functionError } = await supabase.functions.invoke('analyze-articles', {
         body: { 
-          urls: selectedArticles.map(article => article.url),
+          urls: articles.map(article => article.url),
           keyword: keyword
         }
       });
@@ -78,7 +78,7 @@ const Index = () => {
       
       if (retryCount < MAX_RETRIES) {
         await delay(RETRY_DELAY * (retryCount + 1));
-        return invokeAnalysisFunction(retryCount + 1);
+        return invokeAnalysisFunction(articles, keyword, retryCount + 1);
       }
       throw error;
     }
@@ -94,7 +94,11 @@ const Index = () => {
       return;
     }
 
-    setSelectedArticles(selected);
+    // Store selected articles in a local variable to ensure consistency
+    const articlesToAnalyze = [...selected];
+    const currentKeyword = keyword;
+
+    setSelectedArticles(articlesToAnalyze);
     setError(null);
     setIsAnalyzing(true);
     setCurrentStep(3);
@@ -102,10 +106,7 @@ const Index = () => {
     try {
       setAnalysisStatus("Fetching article contents... (This might take 1-2 minutes)\nDon't close this tab, we're analyzing everything in detail!");
       
-      // Wait for state to update before proceeding
-      await delay(100);
-      
-      const data = await invokeAnalysisFunction();
+      const data = await invokeAnalysisFunction(articlesToAnalyze, currentKeyword);
 
       if (!data?.analyses || !data?.idealStructure) {
         throw new Error('Invalid response from analysis');

@@ -88,6 +88,7 @@ async function fetchWithDiffbot(url: string, retries = 3): Promise<any> {
         throw new Error('No article data returned from Diffbot');
       }
       
+      console.log('Diffbot response:', JSON.stringify(data.objects[0], null, 2));
       return data.objects[0];
     } catch (error) {
       console.error(`Diffbot API error (attempt ${i + 1}):`, error);
@@ -113,7 +114,6 @@ async function analyzeArticle(url: string, keyword: string) {
     const textContent = article.text;
     const wordCount = textContent.split(/\s+/).length;
     
-    // Add delay before AI processing
     await new Promise(resolve => setTimeout(resolve, 1000));
     const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
 
@@ -124,29 +124,36 @@ async function analyzeArticle(url: string, keyword: string) {
       domain: extractDomain(url),
       wordCount,
       characterCount: textContent.length,
-      headingsCount: (article.sections || []).length,
-      paragraphsCount: (textContent.match(/\n\n/g) || []).length + 1,
+      headingsCount: article.numHeadings || 0,
+      paragraphsCount: article.numPages || 1,
       imagesCount: (article.images || []).length,
       videosCount: (article.videos || []).length,
       externalLinks: (article.links || [])
         .filter(link => {
-          const linkDomain = extractDomain(link.href || '');
+          if (!link.href) return false;
+          const linkDomain = extractDomain(link.href);
           return linkDomain && linkDomain !== extractDomain(url);
         })
         .map(link => ({
-          url: link.href || '',
-          text: link.text || link.href || '',
-          domain: extractDomain(link.href || '')
+          url: link.href,
+          text: link.text || link.href,
+          domain: extractDomain(link.href)
         })),
-      externalLinksCount: article.links ? article.links.length : 0,
+      externalLinksCount: (article.links || []).filter(link => {
+        if (!link.href) return false;
+        const linkDomain = extractDomain(link.href);
+        return linkDomain && linkDomain !== extractDomain(url);
+      }).length,
       metaTitle: article.title || '',
       metaDescription: article.meta?.description || '',
       keywords,
       readabilityScore: 0,
-      headingStructure: (article.sections || []).map((section, index) => ({
-        level: `h${Math.min(index + 1, 6)}`,
-        text: section.title || ''
-      })),
+      headingStructure: (article.structuredText?.blocks || [])
+        .filter(block => block.type === 'header')
+        .map((block, index) => ({
+          level: `h${block.level || Math.min(index + 1, 6)}`,
+          text: block.text || ''
+        })),
     };
   } catch (error) {
     console.error(`Error analyzing article ${url}:`, error);
