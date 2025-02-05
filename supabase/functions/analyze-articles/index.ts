@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { JSDOM } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
@@ -31,7 +30,7 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4',
+        model: 'gpt-4o-mini', // Use the recommended model
         messages: [
           {
             role: 'system',
@@ -46,6 +45,10 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
       }),
     });
 
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
     const data = await response.json();
     return data.choices[0].message.content
       .split('\n')
@@ -57,30 +60,35 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
   }
 }
 
-async function fetchWithTimeout(url: string, timeout = 10000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-  
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
-    });
-    clearTimeout(id);
-    return response;
-  } catch (error) {
-    clearTimeout(id);
-    throw error;
+async function fetchWithRetry(url: string, retries = 3, timeout = 10000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeout);
+      
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+      
+      clearTimeout(id);
+      return response;
+    } catch (error) {
+      console.error(`Attempt ${i + 1} failed for ${url}:`, error);
+      if (i === retries - 1) throw error;
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // Exponential backoff
+    }
   }
+  throw new Error(`Failed to fetch ${url} after ${retries} attempts`);
 }
 
 async function analyzeArticle(url: string, keyword: string) {
   console.log(`Starting analysis for ${url}`);
   
   try {
-    const response = await fetchWithTimeout(url);
+    const response = await fetchWithRetry(url);
     
     if (!response.ok) {
       console.error(`Failed to fetch ${url}: ${response.status}`);
@@ -181,7 +189,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4',
+        model: 'gpt-4o-mini', // Use the recommended model
         messages: [
           {
             role: 'system',
