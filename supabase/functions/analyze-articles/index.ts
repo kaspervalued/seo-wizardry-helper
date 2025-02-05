@@ -24,6 +24,77 @@ const extractDomain = (url: string): string => {
   }
 };
 
+const extractLinksFromHTML = (html: string): { href: string; text: string }[] => {
+  const links: { href: string; text: string }[] = [];
+  
+  // Method 1: Standard anchor tags
+  const standardLinkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>([^<]*)<\/a>/gi;
+  let match;
+  while ((match = standardLinkRegex.exec(html)) !== null) {
+    links.push({
+      href: match[1],
+      text: match[2].trim()
+    });
+  }
+  
+  // Method 2: Links with nested elements
+  const nestedLinkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi;
+  while ((match = nestedLinkRegex.exec(html)) !== null) {
+    const text = match[2].replace(/<[^>]+>/g, '').trim();
+    if (text && !links.some(l => l.href === match[1])) {
+      links.push({
+        href: match[1],
+        text: text
+      });
+    }
+  }
+  
+  // Method 3: Look for URLs in text content
+  const urlRegex = /https?:\/\/[^\s<>"']+/g;
+  const textContent = html.replace(/<[^>]+>/g, ' ');
+  const urlMatches = textContent.match(urlRegex) || [];
+  urlMatches.forEach(url => {
+    if (!links.some(l => l.href === url)) {
+      links.push({
+        href: url,
+        text: url
+      });
+    }
+  });
+  
+  return links;
+};
+
+async function fetchWithDiffbot(url: string, retries = 3): Promise<any> {
+  const diffbotUrl = `https://api.diffbot.com/v3/article?token=${diffbotToken}&url=${encodeURIComponent(url)}`;
+  
+  for (let i = 0; i < retries; i++) {
+    try {
+      console.log(`Attempting to fetch article with Diffbot (attempt ${i + 1}/${retries})`);
+      const response = await fetch(diffbotUrl);
+      
+      if (!response.ok) {
+        throw new Error(`Diffbot API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (!data.objects?.[0]) {
+        throw new Error('No article data returned from Diffbot');
+      }
+      
+      console.log('Diffbot response:', JSON.stringify(data.objects[0], null, 2));
+      return data.objects[0];
+    } catch (error) {
+      console.error(`Diffbot API error (attempt ${i + 1}):`, error);
+      if (i === retries - 1) throw error;
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    }
+  }
+  
+  throw new Error(`Failed to fetch article after ${retries} attempts`);
+}
+
 async function extractKeyPhrasesWithAI(content: string, keyword: string): Promise<string[]> {
   try {
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -76,36 +147,6 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
   }
 }
 
-async function fetchWithDiffbot(url: string, retries = 3): Promise<any> {
-  const diffbotUrl = `https://api.diffbot.com/v3/article?token=${diffbotToken}&url=${encodeURIComponent(url)}`;
-  
-  for (let i = 0; i < retries; i++) {
-    try {
-      console.log(`Attempting to fetch article with Diffbot (attempt ${i + 1}/${retries})`);
-      const response = await fetch(diffbotUrl);
-      
-      if (!response.ok) {
-        throw new Error(`Diffbot API error: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (!data.objects?.[0]) {
-        throw new Error('No article data returned from Diffbot');
-      }
-      
-      console.log('Diffbot response:', JSON.stringify(data.objects[0], null, 2));
-      return data.objects[0];
-    } catch (error) {
-      console.error(`Diffbot API error (attempt ${i + 1}):`, error);
-      if (i === retries - 1) throw error;
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-    }
-  }
-  
-  throw new Error(`Failed to fetch article after ${retries} attempts`);
-}
-
 async function analyzeArticle(url: string, keyword: string) {
   console.log(`Starting analysis for ${url}`);
   
@@ -127,28 +168,38 @@ async function analyzeArticle(url: string, keyword: string) {
     const articleDomain = extractDomain(url);
     console.log('Article domain:', articleDomain);
 
-    // Get links from both the links array and any HTML anchor tags
+    // Collect links from multiple sources
     const links = [];
     
-    // Process links from Diffbot's links array
+    // Source 1: Diffbot's links array
     if (article.links && Array.isArray(article.links)) {
+      console.log('Found links in Diffbot response:', article.links.length);
       links.push(...article.links);
     }
     
-    // Process links from HTML content if available
+    // Source 2: Parse HTML content
     if (article.html) {
-      const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>([^<]*)<\/a>/gi;
-      let match;
-      while ((match = linkRegex.exec(article.html)) !== null) {
-        links.push({
-          href: match[1],
-          text: match[2].trim()
-        });
-      }
+      const htmlLinks = extractLinksFromHTML(article.html);
+      console.log('Found links in HTML content:', htmlLinks.length);
+      links.push(...htmlLinks);
+    }
+    
+    // Source 3: Check Diffbot's resolved URLs
+    if (article.resolved_urls && Array.isArray(article.resolved_urls)) {
+      console.log('Found resolved URLs:', article.resolved_urls.length);
+      article.resolved_urls.forEach(resolvedUrl => {
+        if (!links.some(l => l.href === resolvedUrl)) {
+          links.push({
+            href: resolvedUrl,
+            text: resolvedUrl
+          });
+        }
+      });
     }
 
-    console.log('Found links:', links);
+    console.log('Total links found before filtering:', links.length);
 
+    // Process and filter external links
     const externalLinks = links
       .filter(link => {
         if (!link.href) return false;
@@ -169,8 +220,13 @@ async function analyzeArticle(url: string, keyword: string) {
           text: link.text || link.title || domain,
           domain: domain
         };
-      });
+      })
+      // Remove duplicates based on URL
+      .filter((link, index, self) => 
+        index === self.findIndex((l) => l.url === link.url)
+      );
 
+    console.log('Final external links count:', externalLinks.length);
     console.log('Extracted external links:', externalLinks);
 
     // Extract and process heading structure
