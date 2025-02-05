@@ -1,5 +1,7 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { JSDOM } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
@@ -55,7 +57,7 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
   }
 }
 
-async function analyzeArticle(url: string) {
+async function analyzeArticle(url: string, keyword: string) {
   console.log(`Starting analysis for ${url}`);
   
   try {
@@ -74,7 +76,7 @@ async function analyzeArticle(url: string) {
     const dom = new JSDOM(html);
     const document = dom.window.document;
 
-    const title = document.title || '';
+    const title = document.querySelector('title')?.textContent || '';
     const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content') || '';
     
     // Limit content extraction to main content areas
@@ -82,10 +84,10 @@ async function analyzeArticle(url: string) {
     const textContent = (mainContent?.textContent || document.body.textContent || '').substring(0, 8000); // Limit content length
     
     const wordCount = textContent.split(/\s+/).length;
-    const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
-    const paragraphs = document.querySelectorAll('p');
-    const images = document.querySelectorAll('img');
-    const videos = document.querySelectorAll('video, iframe[src*="youtube"], iframe[src*="vimeo"]');
+    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+    const paragraphs = Array.from(document.querySelectorAll('p'));
+    const images = Array.from(document.querySelectorAll('img'));
+    const videos = Array.from(document.querySelectorAll('video, iframe[src*="youtube"], iframe[src*="vimeo"]'));
     const links = Array.from(document.querySelectorAll('a[href^="http"]'))
       .slice(0, 20) // Limit number of links
       .map(link => ({
@@ -97,9 +99,9 @@ async function analyzeArticle(url: string) {
 
     // Add delay before AI processing
     await new Promise(resolve => setTimeout(resolve, 1000));
-    const keywords = await extractKeyPhrasesWithAI(textContent, title);
+    const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
 
-    const headingStructure = Array.from(headings).slice(0, 15).map(heading => ({
+    const headingStructure = headings.slice(0, 15).map(heading => ({
       level: heading.tagName.toLowerCase(),
       text: heading.textContent?.trim() || ''
     }));
@@ -234,13 +236,14 @@ serve(async (req) => {
     
     const results = [];
     
-    // Process one article at a time with delay
+    // Process articles sequentially with delay between each
     for (const url of urls) {
-      const result = await analyzeArticle(url);
+      const result = await analyzeArticle(url, keyword);
       if (result) {
         results.push(result);
       }
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Add delay between article processing
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
     if (results.length === 0) {
