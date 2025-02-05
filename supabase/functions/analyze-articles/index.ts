@@ -279,13 +279,22 @@ serve(async (req) => {
   try {
     console.log('Received request to analyze-articles function');
     
-    const { urls, keyword } = await req.json();
+    const requestBody = await req.json().catch(e => {
+      console.error('Failed to parse request body:', e);
+      throw new Error('Invalid JSON in request body');
+    });
+    
+    const { urls, keyword } = requestBody;
+    
+    console.log('Request data:', { urls, keyword });
     
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
+      console.error('No URLs provided:', urls);
       throw new Error('No URLs provided for analysis');
     }
 
     if (!keyword || typeof keyword !== 'string') {
+      console.error('Invalid keyword:', keyword);
       throw new Error('No keyword provided for analysis');
     }
 
@@ -295,6 +304,7 @@ serve(async (req) => {
     
     // Process articles sequentially with delay between each
     for (const url of urls) {
+      console.log(`Processing URL: ${url}`);
       const result = await analyzeArticle(url, keyword);
       if (result) {
         results.push(result);

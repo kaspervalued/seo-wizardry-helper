@@ -46,7 +46,16 @@ const Index = () => {
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
   const invokeAnalysisFunction = async (retryCount = 0): Promise<any> => {
+    if (!selectedArticles?.length || !keyword) {
+      throw new Error('Please select at least one article and provide a keyword');
+    }
+
     try {
+      console.log('Invoking analyze-articles with:', {
+        urls: selectedArticles.map(article => article.url),
+        keyword
+      });
+
       const { data, error: functionError } = await supabase.functions.invoke('analyze-articles', {
         body: { 
           urls: selectedArticles.map(article => article.url),
@@ -55,9 +64,15 @@ const Index = () => {
       });
 
       if (functionError) {
+        console.error('Function error:', functionError);
         throw new Error(functionError.message || 'Failed to analyze articles');
       }
 
+      if (!data) {
+        throw new Error('No data received from analysis');
+      }
+
+      console.log('Received analysis response:', data);
       return data;
     } catch (error) {
       console.error(`Attempt ${retryCount + 1} failed:`, error);
@@ -71,6 +86,15 @@ const Index = () => {
   };
 
   const handleArticleSelection = async (selected: Article[]) => {
+    if (!selected?.length) {
+      toast({
+        title: "Selection Error",
+        description: "Please select at least one article to analyze",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setError(null);
     setSelectedArticles(selected);
     setIsAnalyzing(true);
