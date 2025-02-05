@@ -31,7 +31,7 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4',
         messages: [
           {
             role: 'system',
@@ -57,15 +57,30 @@ async function extractKeyPhrasesWithAI(content: string, keyword: string): Promis
   }
 }
 
-async function analyzeArticle(url: string, keyword: string) {
-  console.log(`Starting analysis for ${url}`);
+async function fetchWithTimeout(url: string, timeout = 10000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
   
   try {
     const response = await fetch(url, {
+      signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       }
     });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
+}
+
+async function analyzeArticle(url: string, keyword: string) {
+  console.log(`Starting analysis for ${url}`);
+  
+  try {
+    const response = await fetchWithTimeout(url);
     
     if (!response.ok) {
       console.error(`Failed to fetch ${url}: ${response.status}`);
@@ -76,6 +91,11 @@ async function analyzeArticle(url: string, keyword: string) {
     const dom = new JSDOM(html);
     const document = dom.window.document;
 
+    if (!document || !document.body) {
+      console.error(`Failed to parse document for ${url}`);
+      return null;
+    }
+
     const title = document.querySelector('title')?.textContent || '';
     const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content') || '';
     
@@ -83,6 +103,11 @@ async function analyzeArticle(url: string, keyword: string) {
     const mainContent = document.querySelector('main, article, [role="main"], #content, .content');
     const textContent = (mainContent?.textContent || document.body.textContent || '').substring(0, 8000); // Limit content length
     
+    if (!textContent) {
+      console.error(`No content extracted from ${url}`);
+      return null;
+    }
+
     const wordCount = textContent.split(/\s+/).length;
     const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
     const paragraphs = Array.from(document.querySelectorAll('p'));
@@ -156,7 +181,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4',
         messages: [
           {
             role: 'system',
@@ -226,12 +251,22 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
 }
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
     const { urls, keyword } = await req.json();
+    
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
+      throw new Error('No URLs provided for analysis');
+    }
+
+    if (!keyword || typeof keyword !== 'string') {
+      throw new Error('No keyword provided for analysis');
+    }
+
     console.log('Starting analysis for URLs:', urls);
     
     const results = [];
