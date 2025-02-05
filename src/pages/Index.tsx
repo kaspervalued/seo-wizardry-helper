@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { AlertCircle } from "lucide-react";
 
 const TOTAL_STEPS = 7;
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 2000; // 2 seconds
 
 const Index = () => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -41,6 +43,33 @@ const Index = () => {
     setCurrentStep(2);
   };
 
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const invokeAnalysisFunction = async (retryCount = 0): Promise<any> => {
+    try {
+      const { data, error: functionError } = await supabase.functions.invoke('analyze-articles', {
+        body: { 
+          urls: selectedArticles.map(article => article.url),
+          keyword: keyword
+        }
+      });
+
+      if (functionError) {
+        throw new Error(functionError.message || 'Failed to analyze articles');
+      }
+
+      return data;
+    } catch (error) {
+      console.error(`Attempt ${retryCount + 1} failed:`, error);
+      
+      if (retryCount < MAX_RETRIES) {
+        await delay(RETRY_DELAY * (retryCount + 1)); // Exponential backoff
+        return invokeAnalysisFunction(retryCount + 1);
+      }
+      throw error;
+    }
+  };
+
   const handleArticleSelection = async (selected: Article[]) => {
     setError(null);
     setSelectedArticles(selected);
@@ -49,16 +78,8 @@ const Index = () => {
     
     try {
       setAnalysisStatus("Fetching article contents... (This might take 1-2 minutes)\nDon't close this tab, we're analyzing everything in detail!");
-      const { data, error: functionError } = await supabase.functions.invoke('analyze-articles', {
-        body: { 
-          urls: selected.map(article => article.url),
-          keyword: keyword
-        }
-      });
-
-      if (functionError) {
-        throw new Error(functionError.message || 'Failed to analyze articles');
-      }
+      
+      const data = await invokeAnalysisFunction();
 
       if (!data?.analyses || !data?.idealStructure) {
         throw new Error('Invalid response from analysis');
@@ -72,7 +93,7 @@ const Index = () => {
       setError(error instanceof Error ? error.message : 'Failed to analyze articles');
       toast({
         title: "Analysis Error",
-        description: "Failed to analyze the selected articles. Please try again with fewer articles or check if the articles are accessible.",
+        description: "Failed to analyze the selected articles. Please try again in a few moments.",
         variant: "destructive",
       });
       setCurrentStep(2);
