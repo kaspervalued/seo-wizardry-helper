@@ -1,3 +1,4 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
@@ -99,13 +100,21 @@ async function fetchMetaDescriptionWithSerpApi(url: string) {
   }
 }
 
-async function fetchWithDiffbot(url: string, retries = 3): Promise<any> {
+async function fetchWithDiffbot(url: string, retries = 3, initialDelay = 1000): Promise<any> {
   const diffbotUrl = `https://api.diffbot.com/v3/article?token=${diffbotToken}&url=${encodeURIComponent(url)}`;
   
   for (let i = 0; i < retries; i++) {
     try {
       console.log(`Attempting to fetch article with Diffbot (attempt ${i + 1}/${retries})`);
+      
       const response = await fetch(diffbotUrl);
+      
+      if (response.status === 429) {
+        const delay = initialDelay * Math.pow(2, i); // Exponential backoff
+        console.log(`Rate limited. Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
       
       if (!response.ok) {
         throw new Error(`Diffbot API error: ${response.status}`);
@@ -117,12 +126,13 @@ async function fetchWithDiffbot(url: string, retries = 3): Promise<any> {
         throw new Error('No article data returned from Diffbot');
       }
       
-      console.log('Diffbot response:', JSON.stringify(data.objects[0], null, 2));
+      console.log('Successfully fetched article from Diffbot');
       return data.objects[0];
     } catch (error) {
       console.error(`Diffbot API error (attempt ${i + 1}):`, error);
       if (i === retries - 1) throw error;
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+      const delay = initialDelay * Math.pow(2, i); // Exponential backoff
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
   
@@ -185,6 +195,9 @@ async function analyzeArticle(url: string, keyword: string) {
   console.log(`Starting analysis for ${url}`);
   
   try {
+    // Add delay between articles to respect rate limits
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
     const [article, metaDescription] = await Promise.all([
       fetchWithDiffbot(url),
       fetchMetaDescriptionWithSerpApi(url)
@@ -201,27 +214,22 @@ async function analyzeArticle(url: string, keyword: string) {
     await new Promise(resolve => setTimeout(resolve, 1000));
     const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
 
-    // Extract and process links
     const articleDomain = extractDomain(url);
     console.log('Article domain:', articleDomain);
 
-    // Collect links from multiple sources
     const links = [];
     
-    // Source 1: Diffbot's links array
     if (article.links && Array.isArray(article.links)) {
       console.log('Found links in Diffbot response:', article.links.length);
       links.push(...article.links);
     }
     
-    // Source 2: Parse HTML content
     if (article.html) {
       const htmlLinks = extractLinksFromHTML(article.html);
       console.log('Found links in HTML content:', htmlLinks.length);
       links.push(...htmlLinks);
     }
     
-    // Source 3: Check Diffbot's resolved URLs
     if (article.resolved_urls && Array.isArray(article.resolved_urls)) {
       console.log('Found resolved URLs:', article.resolved_urls.length);
       article.resolved_urls.forEach(resolvedUrl => {
@@ -236,7 +244,6 @@ async function analyzeArticle(url: string, keyword: string) {
 
     console.log('Total links found before filtering:', links.length);
 
-    // Process and filter external links
     const externalLinks = links
       .filter(link => {
         if (!link.href) return false;
@@ -258,15 +265,12 @@ async function analyzeArticle(url: string, keyword: string) {
           domain: domain
         };
       })
-      // Remove duplicates based on URL
       .filter((link, index, self) => 
         index === self.findIndex((l) => l.url === link.url)
       );
 
     console.log('Final external links count:', externalLinks.length);
-    console.log('Extracted external links:', externalLinks);
 
-    // Extract and process heading structure
     const headings = [];
     if (article.html) {
       const headingMatches = article.html.match(/<h[1-6][^>]*>.*?<\/h[1-6]>/gi) || [];
@@ -630,42 +634,38 @@ serve(async (req) => {
   try {
     console.log('Received request to analyze-articles function');
     
-    const requestBody = await req.json().catch(e => {
-      console.error('Failed to parse request body:', e);
-      throw new Error('Invalid JSON in request body');
-    });
-    
+    const requestBody = await req.json();
     const { urls, keyword } = requestBody;
     
     console.log('Request data:', { urls, keyword });
     
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
-      console.error('No URLs provided:', urls);
       throw new Error('No URLs provided for analysis');
     }
 
     if (!keyword || typeof keyword !== 'string') {
-      console.error('Invalid keyword:', keyword);
       throw new Error('No keyword provided for analysis');
     }
 
     console.log('Starting analysis for URLs:', urls);
     
-    const results = [];
-    
     // Process articles sequentially with delay between each
+    const results = [];
     for (const url of urls) {
-      console.log(`Processing URL: ${url}`);
-      const result = await analyzeArticle(url, keyword);
-      if (result) {
-        results.push(result);
+      try {
+        console.log(`Processing URL: ${url}`);
+        const result = await analyzeArticle(url, keyword);
+        if (result) results.push(result);
+        // Add delay between articles
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (error) {
+        console.error(`Failed to analyze article ${url}:`, error);
+        // Continue with other articles even if one fails
       }
-      // Add delay between article processing
-      await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
     if (results.length === 0) {
-      throw new Error('Failed to analyze any articles');
+      throw new Error('No articles could be successfully analyzed');
     }
 
     const idealStructure = await generateIdealStructure(results, keyword);
