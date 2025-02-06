@@ -14,7 +14,7 @@ export async function extractArticleContent(url: string): Promise<ArticleContent
     const diffbotUrl = `https://api.diffbot.com/v3/article?token=${DIFFBOT_API_TOKEN}&url=${encodeURIComponent(url)}`;
     
     console.log(`Making request to Diffbot API for URL: ${url}`);
-    const response = await fetchWithTimeout(diffbotUrl, { timeout: 30000 });
+    const response = await fetch(diffbotUrl);
     
     if (!response.ok) {
       console.error(`Diffbot API error for ${url}: ${response.status} ${response.statusText}`);
@@ -31,13 +31,14 @@ export async function extractArticleContent(url: string): Promise<ArticleContent
     
     const article = data.objects[0];
     
+    // Ensure we have the minimum required data
     if (!article.text || !article.html) {
       console.error(`Invalid article content for ${url}`, article);
       return null;
     }
     
     return {
-      title: article.title || url,
+      title: article.title || '',
       url: article.pageUrl || url,
       domain: extractDomain(article.pageUrl || url),
       text: article.text,
