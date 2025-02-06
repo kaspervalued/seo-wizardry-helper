@@ -434,7 +434,7 @@ Generate only the titles, no explanations or additional text.`;
 
     console.log('Sending title generation prompt to OpenAI:', titlePrompt);
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const titleResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openAIApiKey}`,
@@ -450,27 +450,78 @@ Generate only the titles, no explanations or additional text.`;
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
+    if (!titleResponse.ok) {
+      throw new Error(`OpenAI API error: ${titleResponse.status}`);
     }
 
-    const data = await response.json();
-    console.log('OpenAI response:', data);
-
-    const suggestedTitles = data.choices[0].message.content
+    const titleData = await titleResponse.json();
+    const suggestedTitles = titleData.choices[0].message.content
       .split('\n')
       .filter(Boolean)
       .slice(0, 3);
 
     console.log('Generated titles:', suggestedTitles);
 
-    // Generate descriptions using the most common keywords
-    const topKeywords = rankedKeywords.slice(0, 3).map(k => k.text);
-    const suggestedDescriptions = [
-      `Learn everything about ${keyword} including ${topKeywords.slice(0, 2).join(' and ')}. Comprehensive guide for beginners and experts.`,
-      `Explore ${keyword} and understand ${topKeywords.slice(2, 4).join(' and ')}. Step-by-step tutorial with practical examples.`,
-      `Master ${keyword} with our in-depth guide covering ${topKeywords.slice(0, 3).join(', ')} and more.`
-    ];
+    // Generate SEO-optimized descriptions using OpenAI
+    const descriptionPrompt = `As an SEO expert, analyze this data and generate 3 SEO-optimized meta descriptions for an article about "${keyword}".
+
+Context:
+- Focus keyword: "${keyword}"
+- Analyzed descriptions from top-ranking articles:
+${analyses.map(a => `- ${a.metaDescription}`).join('\n')}
+- Key topics and phrases found:
+${rankedKeywords.slice(0, 10).map(k => `- ${k.text}`).join('\n')}
+
+Search Intent Analysis:
+${analyses.map(a => `
+Title: ${a.title}
+Description: ${a.metaDescription}
+Key Topics: ${a.keywords.slice(0, 5).join(', ')}
+`).join('\n')}
+
+Requirements:
+1. Create 3 unique, compelling meta descriptions that will compete with existing top articles
+2. Each description must:
+   - Include the focus keyword "${keyword}"
+   - Be 120-150 characters long
+   - Match the search intent identified from top articles
+   - Highlight unique value proposition
+   - Include a clear call-to-action based on user intent
+   - Reflect content depth and comprehensiveness
+   - Be optimized for both SEO and readability
+3. Format output as a simple list of 3 descriptions, one per line
+
+Generate only the descriptions, no explanations or additional text.`;
+
+    console.log('Sending description generation prompt to OpenAI:', descriptionPrompt);
+
+    const descriptionResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are an SEO expert that generates optimized meta descriptions.' },
+          { role: 'user', content: descriptionPrompt }
+        ],
+        temperature: 0.7,
+      }),
+    });
+
+    if (!descriptionResponse.ok) {
+      throw new Error(`OpenAI API error: ${descriptionResponse.status}`);
+    }
+
+    const descriptionData = await descriptionResponse.json();
+    const suggestedDescriptions = descriptionData.choices[0].message.content
+      .split('\n')
+      .filter(Boolean)
+      .slice(0, 3);
+
+    console.log('Generated descriptions:', suggestedDescriptions);
 
     return {
       targetWordCount: calculatedTargetWordCount || 1500,
