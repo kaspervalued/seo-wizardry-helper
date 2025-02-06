@@ -18,9 +18,9 @@ interface AnalysisReportProps {
 
 // Helper function to determine keyword priority class based on frequency
 const getKeywordPriorityClass = (frequency: number) => {
-  if (frequency >= 3) return "bg-red-100 text-red-800"; // High priority
-  if (frequency === 2) return "bg-yellow-100 text-yellow-800"; // Medium priority
-  return "bg-blue-100 text-blue-800"; // Low priority
+  if (frequency >= 3) return "bg-blue-800 text-white"; // High priority - dark blue
+  if (frequency === 2) return "bg-blue-500 text-white"; // Medium priority - medium blue
+  return "bg-blue-200 text-blue-800"; // Low priority - light blue
 };
 
 export const AnalysisReport = ({
@@ -180,14 +180,7 @@ export const AnalysisReport = ({
               </div>
 
               <div>
-                <h4 className="font-medium mb-2">
-                  Recommended Key Phrases
-                  <div className="text-xs text-gray-500 mt-1">
-                    <span className="inline-block px-2 py-1 bg-red-100 text-red-800 rounded-full mr-2">High priority</span>
-                    <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full mr-2">Medium priority</span>
-                    <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded-full">Low priority</span>
-                  </div>
-                </h4>
+                <h4 className="font-medium mb-2">Recommended Key Phrases</h4>
                 <div className="flex flex-wrap gap-2">
                   {idealStructure.recommendedKeywords.map((keyword, idx) => (
                     <span
