@@ -310,7 +310,6 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
   try {
     console.log('Starting generateIdealStructure with analyses:', analyses.length);
     
-    // Calculate average word count
     const validWordCounts = analyses
       .map(a => a.wordCount)
       .filter(count => count > 0);
@@ -319,7 +318,6 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       validWordCounts.reduce((sum, count) => sum + count, 0) / validWordCounts.length
     );
 
-    // Aggregate all content for analysis
     const allContent = analyses.map(analysis => ({
       title: analysis.title,
       description: analysis.metaDescription,
@@ -327,7 +325,6 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       keywords: analysis.keywords
     }));
 
-    // Generate master outline using OpenAI
     const outlinePrompt = `As an expert SEO content strategist, analyze this data and generate the perfect article outline that will outrank all existing articles for "${keyword}".
 
 Context:
@@ -357,14 +354,14 @@ Additional guidelines:
 - Include clear comparisons and evaluations where relevant
 - Address common questions and concerns
 
-Generate a detailed outline that will help create the definitive guide on this topic. Format as:
+Return ONLY a valid JSON object in this exact format, with no additional text or formatting:
 {
   "headings": [
     {
-      "id": "unique-id",
+      "id": "string-id",
       "level": "h2 or h3",
       "text": "heading text",
-      "children": [] (for h2 sections that need h3 subheadings)
+      "children": [] 
     }
   ]
 }`;
@@ -382,7 +379,7 @@ Generate a detailed outline that will help create the definitive guide on this t
         messages: [
           { 
             role: 'system', 
-            content: 'You are an SEO expert that generates comprehensive article outlines optimized to outrank competing content.' 
+            content: 'You are an SEO expert that generates comprehensive article outlines optimized to outrank competing content. Always return ONLY valid JSON, no markdown or additional text.' 
           },
           { role: 'user', content: outlinePrompt }
         ],
@@ -395,7 +392,17 @@ Generate a detailed outline that will help create the definitive guide on this t
     }
 
     const outlineData = await outlineResponse.json();
-    const generatedOutline = JSON.parse(outlineData.choices[0].message.content);
+    console.log('Raw OpenAI response:', outlineData);
+
+    let generatedOutline;
+    try {
+      const content = outlineData.choices[0].message.content.trim();
+      console.log('Parsing outline content:', content);
+      generatedOutline = JSON.parse(content);
+    } catch (parseError) {
+      console.error('Error parsing outline JSON:', parseError);
+      throw new Error('Failed to parse outline JSON from OpenAI response');
+    }
 
     // Aggregate and rank keywords from all articles
     const keywordFrequencyMap = new Map<string, { frequency: number, articles: Set<string> }>();
