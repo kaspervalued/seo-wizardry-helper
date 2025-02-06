@@ -40,35 +40,16 @@ export const OutlineEditor = ({
 
   const generateOutline = async () => {
     try {
-      // This will be implemented in the edge function
       setGenerationStep(1);
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulating analysis
-      setGenerationStep(2);
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulating ideal outline
-      setGenerationStep(3);
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulating master outline
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Temporary mock data
-      setHeadings([
-        {
-          id: "1",
-          level: "h2",
-          text: "Introduction",
-          children: [
-            { id: "1.1", level: "h3", text: "What is SAST?" },
-            { id: "1.2", level: "h3", text: "Why is Security Testing Important?" }
-          ]
-        },
-        {
-          id: "2",
-          level: "h2",
-          text: "Understanding SAST",
-          children: [
-            { id: "2.1", level: "h3", text: "How SAST Works" },
-            { id: "2.2", level: "h3", text: "Key Features and Benefits" }
-          ]
-        }
-      ]);
+      // Use the outline from idealStructure
+      if (idealStructure?.outline) {
+        setHeadings(idealStructure.outline);
+      } else {
+        throw new Error('No outline data available');
+      }
+      
       setIsGenerating(false);
     } catch (error) {
       toast({

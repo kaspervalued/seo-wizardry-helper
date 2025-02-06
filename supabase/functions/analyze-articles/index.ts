@@ -319,6 +319,76 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       validWordCounts.reduce((sum, count) => sum + count, 0) / validWordCounts.length
     );
 
+    // Aggregate all content for analysis
+    const allContent = analyses.map(analysis => ({
+      title: analysis.title,
+      description: analysis.metaDescription,
+      headings: analysis.headingStructure,
+      keywords: analysis.keywords
+    }));
+
+    // Generate master outline using OpenAI
+    const outlinePrompt = `As an SEO expert, analyze this data and generate the perfect article outline for "${keyword}" that will outrank all existing articles.
+
+Context:
+- Focus keyword: "${keyword}"
+- Analyzed articles:
+${allContent.map(content => `
+Title: ${content.title}
+Description: ${content.description}
+Headings: ${content.headings.map(h => `\n  ${h.level}: ${h.text}`).join('')}
+Keywords: ${content.keywords.join(', ')}
+`).join('\n')}
+
+Requirements for the perfect outline:
+1. Create a comprehensive outline that covers both SAST and DAST equally
+2. Include clear comparisons between the two approaches
+3. Address all major aspects: definitions, differences, use cases, benefits, limitations
+4. Structure the content to demonstrate expertise and authority
+5. Include practical implementation guidance
+6. Target length: ${calculatedTargetWordCount} words
+7. Format as a hierarchical outline with H2 and H3 headings only
+
+Generate a detailed outline that will help create the definitive guide on this topic. Format as:
+{
+  "headings": [
+    {
+      "id": "unique-id",
+      "level": "h2 or h3",
+      "text": "heading text",
+      "children": [] (for h2 sections that need h3 subheadings)
+    }
+  ]
+}`;
+
+    console.log('Sending outline generation prompt to OpenAI:', outlinePrompt);
+
+    const outlineResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { 
+            role: 'system', 
+            content: 'You are an SEO expert that generates comprehensive article outlines optimized to outrank competing content.' 
+          },
+          { role: 'user', content: outlinePrompt }
+        ],
+        temperature: 0.7,
+      }),
+    });
+
+    if (!outlineResponse.ok) {
+      throw new Error(`OpenAI API error: ${outlineResponse.status}`);
+    }
+
+    const outlineData = await outlineResponse.json();
+    const generatedOutline = JSON.parse(outlineData.choices[0].message.content);
+
     // Aggregate and rank keywords from all articles
     const keywordFrequencyMap = new Map<string, { frequency: number, articles: Set<string> }>();
     analyses.forEach(analysis => {
@@ -529,6 +599,7 @@ Generate only the descriptions, no explanations or additional text.`;
       suggestedDescriptions,
       recommendedKeywords: rankedKeywords,
       recommendedExternalLinks: rankedLinks,
+      outline: generatedOutline.headings,
     };
   } catch (error) {
     console.error('Error in generateIdealStructure:', error);
