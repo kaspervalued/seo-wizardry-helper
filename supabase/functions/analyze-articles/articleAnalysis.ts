@@ -1,5 +1,5 @@
 import { ArticleAnalysis, ArticleContent } from "./types.ts";
-import { calculateReadabilityScore, extractDomain, extractExternalLinks, fetchWithTimeout } from "./utils.ts";
+import { calculateReadabilityScore, extractDomain, extractExternalLinks } from "./utils.ts";
 
 export async function extractArticleContent(url: string): Promise<ArticleContent | null> {
   console.log(`Extracting content from: ${url}`);
@@ -14,7 +14,14 @@ export async function extractArticleContent(url: string): Promise<ArticleContent
     const diffbotUrl = `https://api.diffbot.com/v3/article?token=${DIFFBOT_API_TOKEN}&url=${encodeURIComponent(url)}`;
     
     console.log(`Making request to Diffbot API for URL: ${url}`);
-    const response = await fetch(diffbotUrl);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    
+    const response = await fetch(diffbotUrl, {
+      signal: controller.signal
+    }).finally(() => {
+      clearTimeout(timeoutId);
+    });
     
     if (!response.ok) {
       console.error(`Diffbot API error for ${url}: ${response.status} ${response.statusText}`);
@@ -31,14 +38,14 @@ export async function extractArticleContent(url: string): Promise<ArticleContent
     
     const article = data.objects[0];
     
-    // Ensure we have the minimum required data
+    // Basic validation of required fields
     if (!article.text || !article.html) {
-      console.error(`Invalid article content for ${url}`, article);
+      console.error(`Missing required fields for ${url}`, article);
       return null;
     }
     
     return {
-      title: article.title || '',
+      title: article.title || url,
       url: article.pageUrl || url,
       domain: extractDomain(article.pageUrl || url),
       text: article.text,
@@ -50,7 +57,11 @@ export async function extractArticleContent(url: string): Promise<ArticleContent
       images: article.images || [],
     };
   } catch (error) {
-    console.error(`Error extracting content from ${url}:`, error);
+    if (error.name === 'AbortError') {
+      console.error(`Timeout extracting content from ${url}`);
+    } else {
+      console.error(`Error extracting content from ${url}:`, error);
+    }
     return null;
   }
 }
