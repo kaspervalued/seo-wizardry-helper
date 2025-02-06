@@ -271,6 +271,7 @@ async function analyzeArticle(url: string, keyword: string) {
 
 async function generateIdealStructure(analyses: any[], keyword: string) {
   try {
+    // Calculate average word count
     const validWordCounts = analyses
       .map(a => a.wordCount)
       .filter(count => count > 0);
@@ -279,84 +280,73 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       validWordCounts.reduce((sum, count) => sum + count, 0) / validWordCounts.length
     );
 
-    const articlesContext = analyses.map(a => `
-      Title: ${a.title}
-      Key phrases: ${a.keywords.slice(0, 5).join(', ')}
-    `).join('\n');
-
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    console.log('Making request to OpenAI API for ideal structure...');
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `As an SEO expert, analyze these articles and provide recommendations for the keyword "${keyword}".`
-          },
-          {
-            role: 'user',
-            content: `Based on these articles:\n${articlesContext}\n
-            Provide a JSON response with:
-            {
-              "title_suggestions": ["3 SEO titles with keyword"],
-              "meta_descriptions": ["3 meta descriptions with keyword"],
-              "recommended_keywords": ["6-8 key phrases from articles"]
-            }`
-          }
-        ],
-        temperature: 0.7,
-      }),
+    // Aggregate and rank keywords from all articles
+    const keywordFrequencyMap = new Map<string, number>();
+    analyses.forEach(analysis => {
+      analysis.keywords.forEach(keyword => {
+        const normalizedKeyword = keyword.toLowerCase().trim();
+        keywordFrequencyMap.set(
+          normalizedKeyword, 
+          (keywordFrequencyMap.get(normalizedKeyword) || 0) + 1
+        );
+      });
     });
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('OpenAI API error response:', errorData);
-      throw new Error(`OpenAI API error: ${response.status} - ${errorData}`);
-    }
+    // Sort keywords by frequency and get top ones
+    const rankedKeywords = Array.from(keywordFrequencyMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([keyword, frequency]) => keyword);
 
-    const data = await response.json();
-    console.log('Successfully received OpenAI API response for ideal structure');
+    console.log('Ranked keywords:', rankedKeywords);
 
-    let recommendations;
-    try {
-      recommendations = JSON.parse(data.choices[0].message.content.trim());
-    } catch (parseError) {
-      console.error('Error parsing OpenAI response:', parseError);
-      recommendations = {
-        title_suggestions: [`Complete Guide to ${keyword}`, `${keyword} Tutorial`, `Understanding ${keyword}`],
-        meta_descriptions: [`3 meta descriptions with keyword`],
-        recommended_keywords: [keyword, 'guide', 'tutorial', 'tips'],
-      };
-    }
-
-    const commonLinks = analyses
-      .flatMap(a => a.externalLinks.slice(0, 5))
-      .reduce((acc: any[], link) => {
-        const existing = acc.find(l => l.url === link.url);
-        if (existing) {
-          existing.frequency++;
-        } else if (acc.length < 5) {
-          acc.push({ ...link, frequency: 1 });
+    // Aggregate and rank external links from all articles
+    const linkFrequencyMap = new Map<string, { url: string; text: string; domain: string; frequency: number }>();
+    
+    analyses.forEach(analysis => {
+      analysis.externalLinks.forEach(link => {
+        const existingLink = linkFrequencyMap.get(link.url);
+        if (existingLink) {
+          existingLink.frequency += 1;
+        } else {
+          linkFrequencyMap.set(link.url, {
+            url: link.url,
+            text: link.text,
+            domain: link.domain,
+            frequency: 1
+          });
         }
-        return acc;
-      }, [])
-      .sort((a, b) => b.frequency - a.frequency);
+      });
+    });
+
+    // Sort links by frequency and get top ones
+    const rankedLinks = Array.from(linkFrequencyMap.values())
+      .sort((a, b) => b.frequency - a.frequency)
+      .slice(0, 5);
+
+    console.log('Ranked external links:', rankedLinks);
+
+    // Generate titles and descriptions using the most common keywords
+    const topKeywords = rankedKeywords.slice(0, 3);
+    const suggestedTitles = [
+      `Complete Guide to ${keyword}: ${topKeywords[0] || ''}`,
+      `Understanding ${keyword}: ${topKeywords[1] || ''} Explained`,
+      `${keyword} Best Practices: ${topKeywords[2] || ''}`
+    ];
+
+    const suggestedDescriptions = [
+      `Learn everything about ${keyword} including ${topKeywords.slice(0, 2).join(' and ')}. Comprehensive guide for beginners and experts.`,
+      `Explore ${keyword} and understand ${topKeywords.slice(2, 4).join(' and ')}. Step-by-step tutorial with practical examples.`,
+      `Master ${keyword} with our in-depth guide covering ${topKeywords.slice(0, 3).join(', ')} and more.`
+    ];
 
     return {
       targetWordCount: calculatedTargetWordCount || 1500,
-      suggestedTitles: recommendations.title_suggestions || [],
-      suggestedDescriptions: recommendations.meta_descriptions || [],
-      recommendedKeywords: recommendations.recommended_keywords || [],
-      recommendedExternalLinks: commonLinks,
+      suggestedTitles,
+      suggestedDescriptions,
+      recommendedKeywords: rankedKeywords,
+      recommendedExternalLinks: rankedLinks,
     };
-
   } catch (error) {
     console.error('Error in generateIdealStructure:', error);
     throw error;
