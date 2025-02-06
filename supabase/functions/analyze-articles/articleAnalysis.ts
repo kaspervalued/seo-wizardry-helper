@@ -1,19 +1,18 @@
 import { ArticleAnalysis, ArticleContent } from "./types.ts";
 import { calculateReadabilityScore, extractDomain, extractExternalLinks, fetchWithTimeout } from "./utils.ts";
 
-const DIFFBOT_API_TOKEN = Deno.env.get('DIFFBOT_API_TOKEN');
-
 export async function extractArticleContent(url: string): Promise<ArticleContent | null> {
   console.log(`Extracting content from: ${url}`);
   
+  const DIFFBOT_API_TOKEN = Deno.env.get('DIFFBOT_API_TOKEN');
   if (!DIFFBOT_API_TOKEN) {
     console.error('DIFFBOT_API_TOKEN is not set');
     return null;
   }
   
-  const diffbotUrl = `https://api.diffbot.com/v3/article?token=${DIFFBOT_API_TOKEN}&url=${encodeURIComponent(url)}`;
-  
   try {
+    const diffbotUrl = `https://api.diffbot.com/v3/article?token=${DIFFBOT_API_TOKEN}&url=${encodeURIComponent(url)}`;
+    
     console.log(`Making request to Diffbot API for URL: ${url}`);
     const response = await fetchWithTimeout(diffbotUrl, { timeout: 30000 });
     

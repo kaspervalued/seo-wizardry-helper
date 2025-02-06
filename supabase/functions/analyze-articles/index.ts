@@ -25,7 +25,7 @@ serve(async (req) => {
     const DIFFBOT_API_TOKEN = Deno.env.get('DIFFBOT_API_TOKEN');
     if (!DIFFBOT_API_TOKEN) {
       console.error('DIFFBOT_API_TOKEN is not configured');
-      throw new Error('DIFFBOT_API_TOKEN is not configured');
+      throw new Error('DIFFBOT_API_TOKEN is not configured. Please set up the DIFFBOT_API_TOKEN in your Supabase Edge Function secrets.');
     }
 
     console.log(`Starting analysis of ${urls.length} articles for keyword: ${keyword}`);
@@ -36,25 +36,28 @@ serve(async (req) => {
       try {
         console.log(`Processing article: ${url}`);
         const content = await extractArticleContent(url);
+        
         if (!content) {
-          console.error(`No content extracted from ${url}`);
+          console.error(`Failed to extract content from ${url}`);
           continue;
         }
+
         const analysis = await analyzeArticle(content);
         if (analysis) {
           analysisResults.push(analysis);
-          console.log(`Successfully processed article: ${url}`);
+          console.log(`Successfully analyzed article: ${url}`);
+        } else {
+          console.error(`Failed to analyze content from ${url}`);
         }
       } catch (error) {
         console.error(`Error processing article ${url}:`, error);
-        // Continue with other articles even if one fails
       }
     }
 
     console.log(`Successfully analyzed ${analysisResults.length} out of ${urls.length} articles`);
 
     if (analysisResults.length === 0) {
-      throw new Error('No articles could be successfully analyzed. Please check the provided URLs and try again.');
+      throw new Error('No articles could be successfully analyzed. This might be due to invalid URLs or API rate limits. Please try again with different URLs.');
     }
 
     // Generate ideal structure based on analyses
