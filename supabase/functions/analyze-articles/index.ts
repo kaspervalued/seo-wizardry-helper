@@ -3,13 +3,14 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 const diffbotToken = Deno.env.get('DIFFBOT_API_TOKEN');
+const serpApiKey = Deno.env.get('SERPAPI_API_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-if (!openAIApiKey || !diffbotToken) {
+if (!openAIApiKey || !diffbotToken || !serpApiKey) {
   console.error('Missing required API keys');
   throw new Error('Required API keys not set');
 }
@@ -64,6 +65,39 @@ const extractLinksFromHTML = (html: string): { href: string; text: string }[] =>
   
   return links;
 };
+
+async function fetchMetaDescriptionWithSerpApi(url: string) {
+  try {
+    console.log('Fetching meta description with SERPAPI for:', url);
+    
+    const encodedUrl = encodeURIComponent(url);
+    const serpApiUrl = `https://serpapi.com/search.json?engine=google&q=site:${encodedUrl}&api_key=${serpApiKey}`;
+    
+    const response = await fetch(serpApiUrl);
+    
+    if (!response.ok) {
+      throw new Error(`SERPAPI request failed: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('SERPAPI response:', data);
+    
+    // Extract meta description from organic results
+    const organicResults = data.organic_results || [];
+    const result = organicResults.find(r => r.link === url);
+    
+    if (result?.snippet) {
+      console.log('Found meta description:', result.snippet);
+      return result.snippet;
+    }
+    
+    console.log('No meta description found for:', url);
+    return '';
+  } catch (error) {
+    console.error('Error fetching meta description:', error);
+    return '';
+  }
+}
 
 async function fetchWithDiffbot(url: string, retries = 3): Promise<any> {
   const diffbotUrl = `https://api.diffbot.com/v3/article?token=${diffbotToken}&url=${encodeURIComponent(url)}`;
@@ -151,7 +185,10 @@ async function analyzeArticle(url: string, keyword: string) {
   console.log(`Starting analysis for ${url}`);
   
   try {
-    const article = await fetchWithDiffbot(url);
+    const [article, metaDescription] = await Promise.all([
+      fetchWithDiffbot(url),
+      fetchMetaDescriptionWithSerpApi(url)
+    ]);
     
     if (!article.text) {
       console.error(`No content extracted from ${url}`);
@@ -258,7 +295,7 @@ async function analyzeArticle(url: string, keyword: string) {
       externalLinks,
       externalLinksCount: externalLinks.length,
       metaTitle: article.title || '',
-      metaDescription: article.meta?.description || '',
+      metaDescription: metaDescription || article.meta?.description || '',
       keywords,
       readabilityScore: 0,
       headingStructure: headings,
