@@ -305,13 +305,54 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       });
     });
 
-    console.log('Keyword frequency map:', 
-      Array.from(keywordFrequencyMap.entries()).map(([keyword, data]) => ({
-        keyword,
-        frequency: data.frequency,
+    // Aggregate and rank external links from all articles
+    const linkFrequencyMap = new Map<string, { 
+      url: string; 
+      text: string; 
+      domain: string; 
+      articles: Set<string>;
+    }>();
+    
+    analyses.forEach(analysis => {
+      if (!analysis.externalLinks || !Array.isArray(analysis.externalLinks)) {
+        console.warn('Invalid externalLinks array in analysis:', analysis);
+        return;
+      }
+
+      analysis.externalLinks.forEach(link => {
+        const existingLink = linkFrequencyMap.get(link.url);
+        if (existingLink) {
+          existingLink.articles.add(analysis.url);
+        } else {
+          linkFrequencyMap.set(link.url, {
+            url: link.url,
+            text: link.text,
+            domain: link.domain,
+            articles: new Set([analysis.url])
+          });
+        }
+      });
+    });
+
+    console.log('Link frequency map:', 
+      Array.from(linkFrequencyMap.entries()).map(([url, data]) => ({
+        url,
         articleCount: data.articles.size
       }))
     );
+
+    // Sort links by number of articles they appear in
+    const rankedLinks = Array.from(linkFrequencyMap.values())
+      .sort((a, b) => b.articles.size - a.articles.size)
+      .map(link => ({
+        url: link.url,
+        text: link.text,
+        domain: link.domain,
+        frequency: link.articles.size
+      }))
+      .slice(0, 10);
+
+    console.log('Final ranked links:', rankedLinks);
 
     // Sort keywords by frequency and article count
     const rankedKeywords = Array.from(keywordFrequencyMap.entries())
@@ -331,68 +372,6 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
         text: keyword,
         frequency: data.articles.size
       }));
-
-    console.log('Ranked keywords:', rankedKeywords);
-
-    // Aggregate and rank external links from all articles
-    const linkFrequencyMap = new Map<string, { 
-      url: string; 
-      text: string; 
-      domain: string; 
-      frequency: number;
-      articles: Set<string>; // Track which articles contain this link
-    }>();
-    
-    analyses.forEach(analysis => {
-      if (!analysis.externalLinks || !Array.isArray(analysis.externalLinks)) {
-        console.warn('Invalid externalLinks array in analysis:', analysis);
-        return;
-      }
-
-      analysis.externalLinks.forEach(link => {
-        const existingLink = linkFrequencyMap.get(link.url);
-        if (existingLink) {
-          existingLink.frequency += 1;
-          existingLink.articles.add(analysis.url);
-        } else {
-          linkFrequencyMap.set(link.url, {
-            url: link.url,
-            text: link.text,
-            domain: link.domain,
-            frequency: 1,
-            articles: new Set([analysis.url])
-          });
-        }
-      });
-    });
-
-    console.log('Link frequency map:', 
-      Array.from(linkFrequencyMap.entries()).map(([url, data]) => ({
-        url,
-        frequency: data.frequency,
-        articleCount: data.articles.size
-      }))
-    );
-
-    // Sort links by actual article count and frequency
-    const rankedLinks = Array.from(linkFrequencyMap.values())
-      .sort((a, b) => {
-        // First sort by number of unique articles
-        const articleCountDiff = b.articles.size - a.articles.size;
-        if (articleCountDiff !== 0) return articleCountDiff;
-        
-        // If article count is equal, sort by total frequency
-        return b.frequency - a.frequency;
-      })
-      .map(link => ({
-        url: link.url,
-        text: link.text,
-        domain: link.domain,
-        frequency: link.articles.size
-      }))
-      .slice(0, 10);
-
-    console.log('Final ranked links:', rankedLinks);
 
     // Generate titles and descriptions using the most common keywords
     const topKeywords = rankedKeywords.slice(0, 3).map(k => k.text);
