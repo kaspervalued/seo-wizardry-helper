@@ -5,7 +5,16 @@ export interface Article {
   rank: number;
 }
 
-export interface ArticleAnalysis {
+export interface ArticleContent {
+  title: string;
+  text: string;
+  html: string;
+  meta: {
+    description?: string;
+  };
+}
+
+export interface AnalysisResult {
   title: string;
   url: string;
   domain: string;
@@ -15,37 +24,39 @@ export interface ArticleAnalysis {
   paragraphsCount: number;
   imagesCount: number;
   videosCount: number;
+  externalLinks: Array<{
+    url: string;
+    text: string;
+    domain: string;
+  }>;
   externalLinksCount: number;
   metaTitle: string;
   metaDescription: string;
   keywords: string[];
-  externalLinks: {
-    url: string;
-    text: string;
-    domain: string;
-  }[];
-  headingStructure: {
+  readabilityScore: number;
+  headingStructure: Array<{
     level: string;
     text: string;
-  }[];
+  }>;
 }
 
 export interface IdealStructure {
   targetWordCount: number;
-  suggestedTitles: string[];
-  suggestedDescriptions: string[];
-  recommendedKeywords: {
+  recommendedKeywords: Array<{
     text: string;
     frequency: number;
-  }[];
-  recommendedExternalLinks: {
+  }>;
+  recommendedExternalLinks: Array<{
     url: string;
     text: string;
     domain: string;
     frequency: number;
-  }[];
-  outline: {
-    level: string;
-    text: string;
-  }[];
+  }>;
+  suggestedTitles: string[];
+  suggestedDescriptions: string[];
+}
+
+export interface AnalysisResponse {
+  analyses: AnalysisResult[];
+  idealStructure: IdealStructure;
 }

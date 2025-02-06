@@ -1,80 +1,92 @@
-import { Article, ArticleAnalysis } from "./types.ts";
-import { extractDomain } from "./utils.ts";
+import { ArticleContent, AnalysisResult } from './types.ts';
+import { extractDomain, countWords, countCharacters, extractExternalLinks, calculateReadabilityScore } from './utils.ts';
 
 const DIFFBOT_API_TOKEN = Deno.env.get('DIFFBOT_API_TOKEN');
 
-export async function analyzeArticle(article: Article): Promise<ArticleAnalysis> {
-  console.log(`Analyzing article: ${article.url}`);
+export async function fetchArticleContent(url: string): Promise<ArticleContent> {
+  const diffbotUrl = `https://api.diffbot.com/v3/article?token=${DIFFBOT_API_TOKEN}&url=${encodeURIComponent(url)}`;
   
   try {
-    // Fetch article content using Diffbot
-    const diffbotUrl = `https://api.diffbot.com/v3/article?token=${DIFFBOT_API_TOKEN}&url=${encodeURIComponent(article.url)}`;
     const response = await fetch(diffbotUrl);
     const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(`Diffbot API error: ${JSON.stringify(data)}`);
-    }
-
-    const articleData = data.objects[0];
     
-    // Extract external links
-    const externalLinks = (articleData.links || [])
-      .filter((link: any) => link.type === 'link' && !link.url.includes(extractDomain(article.url)))
-      .map((link: any) => ({
-        url: link.url,
-        text: link.text,
-        domain: extractDomain(link.url)
-      }));
-
-    // Extract heading structure
-    const headingStructure = (articleData.elements || [])
-      .filter((element: any) => element.type === 'header')
-      .map((header: any) => ({
-        level: `h${header.headerLevel}`,
-        text: header.text
-      }));
-
-    // Extract keywords using text content
-    const keywords = extractKeywords(articleData.text);
-
+    if (!response.ok) {
+      throw new Error(`Diffbot API error: ${data.error}`);
+    }
+    
+    if (!data.objects?.[0]) {
+      throw new Error('No article content found');
+    }
+    
     return {
-      title: articleData.title,
-      url: article.url,
-      domain: extractDomain(article.url),
-      wordCount: articleData.text.split(/\s+/).length,
-      characterCount: articleData.text.length,
-      headingsCount: headingStructure.length,
-      paragraphsCount: (articleData.elements || []).filter((el: any) => el.type === 'p').length,
-      imagesCount: (articleData.images || []).length,
-      videosCount: (articleData.videos || []).length,
-      externalLinksCount: externalLinks.length,
-      metaTitle: articleData.title,
-      metaDescription: articleData.description || '',
-      keywords,
-      externalLinks,
-      headingStructure,
+      title: data.objects[0].title,
+      text: data.objects[0].text,
+      html: data.objects[0].html,
+      meta: {
+        description: data.objects[0].meta?.description
+      }
     };
   } catch (error) {
-    console.error(`Error analyzing article ${article.url}:`, error);
+    console.error(`Error fetching article content for ${url}:`, error);
     throw error;
   }
 }
 
-function extractKeywords(text: string): string[] {
-  // Simple keyword extraction based on word frequency
-  const words = text.toLowerCase()
-    .replace(/[^\w\s]/g, '')
-    .split(/\s+/)
-    .filter(word => word.length > 3);
-
-  const frequency: { [key: string]: number } = {};
-  words.forEach(word => {
-    frequency[word] = (frequency[word] || 0) + 1;
+export async function analyzeArticle(url: string, content: ArticleContent): Promise<AnalysisResult> {
+  const domain = extractDomain(url);
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(content.html, 'text/html');
+  
+  // Extract headings
+  const headings = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6')).map(heading => ({
+    level: heading.tagName.toLowerCase(),
+    text: heading.textContent || ''
+  }));
+  
+  // Extract external links
+  const externalLinks = extractExternalLinks(content.html, domain);
+  
+  // Extract keywords using OpenAI
+  const keywordsResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: 'Extract the main keywords from the following article text. Return only an array of keywords, no explanation.'
+        },
+        {
+          role: 'user',
+          content: content.text.substring(0, 4000) // Limit text length
+        }
+      ]
+    })
   });
-
-  return Object.entries(frequency)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 10)
-    .map(([word]) => word);
+  
+  const keywordsData = await keywordsResponse.json();
+  const keywords = JSON.parse(keywordsData.choices[0].message.content);
+  
+  return {
+    title: content.title,
+    url,
+    domain,
+    wordCount: countWords(content.text),
+    characterCount: countCharacters(content.text),
+    headingsCount: headings.length,
+    paragraphsCount: doc.querySelectorAll('p').length,
+    imagesCount: doc.querySelectorAll('img').length,
+    videosCount: doc.querySelectorAll('video, iframe[src*="youtube"], iframe[src*="vimeo"]').length,
+    externalLinks,
+    externalLinksCount: externalLinks.length,
+    metaTitle: content.title,
+    metaDescription: content.meta.description || '',
+    keywords,
+    readabilityScore: calculateReadabilityScore(content.text),
+    headingStructure: headings
+  };
 }
