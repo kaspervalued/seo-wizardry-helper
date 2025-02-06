@@ -38,7 +38,6 @@ const fetchSerpResults = async (keyword: string): Promise<Article[]> => {
 
     if (error) throw error;
 
-    // Transform SERP results to our Article type
     return (data.organic_results || []).map((result: SerpApiResult) => ({
       title: result.title,
       url: result.link,
