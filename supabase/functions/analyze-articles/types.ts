@@ -5,23 +5,6 @@ export interface Article {
   rank: number;
 }
 
-export interface HeadingStructure {
-  level: string;
-  text: string;
-}
-
-export interface ExternalLink {
-  url: string;
-  text: string;
-  domain: string;
-  frequency?: number;
-}
-
-export interface KeywordWithFrequency {
-  text: string;
-  frequency: number;
-}
-
 export interface ArticleAnalysis {
   title: string;
   url: string;
@@ -32,29 +15,37 @@ export interface ArticleAnalysis {
   paragraphsCount: number;
   imagesCount: number;
   videosCount: number;
-  externalLinks: ExternalLink[];
   externalLinksCount: number;
   metaTitle: string;
   metaDescription: string;
   keywords: string[];
-  readabilityScore: number;
-  headingStructure: HeadingStructure[];
-  error?: string;
+  externalLinks: {
+    url: string;
+    text: string;
+    domain: string;
+  }[];
+  headingStructure: {
+    level: string;
+    text: string;
+  }[];
 }
 
 export interface IdealStructure {
   targetWordCount: number;
-  recommendedKeywords: KeywordWithFrequency[];
-  recommendedExternalLinks: ExternalLink[];
   suggestedTitles: string[];
   suggestedDescriptions: string[];
-  outline: OutlineHeading[];
-}
-
-export interface OutlineHeading {
-  id: string;
-  level: 'h2' | 'h3';
-  text: string;
-  content?: string;
-  children?: OutlineHeading[];
+  recommendedKeywords: {
+    text: string;
+    frequency: number;
+  }[];
+  recommendedExternalLinks: {
+    url: string;
+    text: string;
+    domain: string;
+    frequency: number;
+  }[];
+  outline: {
+    level: string;
+    text: string;
+  }[];
 }
