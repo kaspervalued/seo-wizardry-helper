@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,15 +30,23 @@ export const OutlineEditor = ({
   const [headings, setHeadings] = useState<OutlineHeading[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [isGenerating, setIsGenerating] = useState(true);
+  const [generationStep, setGenerationStep] = useState(1);
   const { toast } = useToast();
+
+  useEffect(() => {
+    generateOutline();
+  }, []);
 
   const generateOutline = async () => {
     try {
       // This will be implemented in the edge function
-      toast({
-        title: "Generating outline...",
-        description: "Please wait while we analyze the content and create an optimal outline.",
-      });
+      setGenerationStep(1);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulating analysis
+      setGenerationStep(2);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulating ideal outline
+      setGenerationStep(3);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulating master outline
       
       // Temporary mock data
       setHeadings([
@@ -61,12 +69,14 @@ export const OutlineEditor = ({
           ]
         }
       ]);
+      setIsGenerating(false);
     } catch (error) {
       toast({
         title: "Error",
         description: "Failed to generate outline. Please try again.",
         variant: "destructive",
       });
+      setIsGenerating(false);
     }
   };
 
@@ -237,22 +247,33 @@ export const OutlineEditor = ({
     </div>
   );
 
+  if (isGenerating) {
+    return (
+      <Card className="p-6">
+        <div className="flex flex-col items-center justify-center space-y-4 min-h-[400px]">
+          <div className="w-8 h-8 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+          <p className="text-lg font-medium">Generating Perfect Outline</p>
+          <p className="text-sm text-muted-foreground">
+            {generationStep === 1 && "Analyzing top-ranking articles..."}
+            {generationStep === 2 && "Creating SEO-optimized outline..."}
+            {generationStep === 3 && "Finalizing master outline..."}
+          </p>
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <Card className="p-6">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-lg font-semibold">Article Outline</h3>
-          <div className="space-x-2">
-            <Button 
-              variant="outline"
-              onClick={() => addHeading('h2')}
-            >
-              Add H2
-            </Button>
-            <Button onClick={generateOutline}>
-              Generate Outline
-            </Button>
-          </div>
+          <Button 
+            variant="outline"
+            onClick={() => addHeading('h2')}
+          >
+            Add H2
+          </Button>
         </div>
 
         <ScrollArea className="h-[500px] rounded-md">
