@@ -18,7 +18,11 @@ export async function extractArticleContent(url: string): Promise<ArticleContent
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     const response = await fetch(diffbotUrl, {
-      signal: controller.signal
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
     }).finally(() => {
       clearTimeout(timeoutId);
     });
@@ -29,7 +33,7 @@ export async function extractArticleContent(url: string): Promise<ArticleContent
     }
     
     const data = await response.json();
-    console.log(`Received response from Diffbot for ${url}`);
+    console.log(`Received response from Diffbot for ${url}:`, data);
     
     if (!data.objects || data.objects.length === 0) {
       console.error(`No article content found for ${url}`, data);
