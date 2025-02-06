@@ -16,6 +16,13 @@ interface AnalysisReportProps {
   onProceed: () => void;
 }
 
+// Helper function to determine keyword priority class based on frequency
+const getKeywordPriorityClass = (frequency: number) => {
+  if (frequency >= 3) return "bg-red-100 text-red-800"; // High priority
+  if (frequency === 2) return "bg-yellow-100 text-yellow-800"; // Medium priority
+  return "bg-blue-100 text-blue-800"; // Low priority
+};
+
 export const AnalysisReport = ({
   analyses,
   idealStructure,
@@ -173,14 +180,21 @@ export const AnalysisReport = ({
               </div>
 
               <div>
-                <h4 className="font-medium mb-2">Recommended Key Phrases</h4>
+                <h4 className="font-medium mb-2">
+                  Recommended Key Phrases
+                  <div className="text-xs text-gray-500 mt-1">
+                    <span className="inline-block px-2 py-1 bg-red-100 text-red-800 rounded-full mr-2">High priority</span>
+                    <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full mr-2">Medium priority</span>
+                    <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded-full">Low priority</span>
+                  </div>
+                </h4>
                 <div className="flex flex-wrap gap-2">
                   {idealStructure.recommendedKeywords.map((keyword, idx) => (
                     <span
                       key={idx}
-                      className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs"
+                      className={`px-2 py-1 rounded-full text-xs ${getKeywordPriorityClass(keyword.frequency)}`}
                     >
-                      {keyword}
+                      {keyword.text}
                     </span>
                   ))}
                 </div>
@@ -201,36 +215,12 @@ export const AnalysisReport = ({
                       </a>
                       {" "}
                       <span className="text-gray-500">
-                        ({link.domain}) - Found in {link.frequency} articles
+                        ({link.domain}) - Found in {link.frequency} article{link.frequency !== 1 ? 's' : ''}
                       </span>
                     </li>
                   ))}
                 </ul>
               </div>
-
-              {/* Commented out as requested
-              <div>
-                <h4 className="font-medium mb-2">Suggested Heading Structure</h4>
-                <ul className="space-y-2 text-sm">
-                  {idealStructure.suggestedHeadingStructure.map(
-                    (heading, idx) => (
-                      <li
-                        key={idx}
-                        className="pl-4"
-                        style={{
-                          marginLeft: `${
-                            (parseInt(heading.level.slice(1)) - 1) * 16
-                          }px`,
-                        }}
-                      >
-                        <span className="text-gray-500">{heading.level}:</span>{" "}
-                        {heading.text}
-                      </li>
-                    )
-                  )}
-                </ul>
-              </div>
-              */}
             </div>
           </ScrollArea>
         </Card>

@@ -17,6 +17,11 @@ export interface ExternalLink {
   frequency?: number;
 }
 
+export interface KeywordWithFrequency {
+  text: string;
+  frequency: number;
+}
+
 export interface ArticleAnalysis {
   title: string;
   url: string;
@@ -39,7 +44,7 @@ export interface ArticleAnalysis {
 
 export interface IdealStructure {
   targetWordCount: number;
-  recommendedKeywords: string[];
+  recommendedKeywords: KeywordWithFrequency[];
   recommendedExternalLinks: ExternalLink[];
   suggestedTitles: string[];
   suggestedDescriptions: string[];

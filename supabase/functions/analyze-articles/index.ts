@@ -283,7 +283,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
     );
 
     // Aggregate and rank keywords from all articles
-    const keywordFrequencyMap = new Map<string, number>();
+    const keywordFrequencyMap = new Map<string, { frequency: number, articles: Set<string> }>();
     analyses.forEach(analysis => {
       if (!analysis.keywords || !Array.isArray(analysis.keywords)) {
         console.warn('Invalid keywords array in analysis:', analysis);
@@ -292,26 +292,45 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
 
       analysis.keywords.forEach(keyword => {
         const normalizedKeyword = keyword.toLowerCase().trim();
-        keywordFrequencyMap.set(
-          normalizedKeyword, 
-          (keywordFrequencyMap.get(normalizedKeyword) || 0) + 1
-        );
+        const existing = keywordFrequencyMap.get(normalizedKeyword);
+        if (existing) {
+          existing.frequency += 1;
+          existing.articles.add(analysis.url);
+        } else {
+          keywordFrequencyMap.set(normalizedKeyword, {
+            frequency: 1,
+            articles: new Set([analysis.url])
+          });
+        }
       });
     });
 
-    console.log('Keyword frequency map:', Object.fromEntries(keywordFrequencyMap));
+    console.log('Keyword frequency map:', 
+      Array.from(keywordFrequencyMap.entries()).map(([keyword, data]) => ({
+        keyword,
+        frequency: data.frequency,
+        articleCount: data.articles.size
+      }))
+    );
 
-    // Sort keywords by frequency and get top ones
+    // Sort keywords by frequency and article count
     const rankedKeywords = Array.from(keywordFrequencyMap.entries())
       .sort((a, b) => {
-        // First sort by frequency
-        const freqDiff = b[1] - a[1];
+        // First sort by number of articles containing the keyword
+        const articleCountDiff = b[1].articles.size - a[1].articles.size;
+        if (articleCountDiff !== 0) return articleCountDiff;
+        
+        // If article count is equal, sort by total frequency
+        const freqDiff = b[1].frequency - a[1].frequency;
         if (freqDiff !== 0) return freqDiff;
         
         // If frequencies are equal, sort by length (prefer shorter keywords)
         return a[0].length - b[0].length;
       })
-      .map(([keyword]) => keyword);
+      .map(([keyword, data]) => ({
+        text: keyword,
+        frequency: data.articles.size
+      }));
 
     console.log('Ranked keywords:', rankedKeywords);
 
@@ -369,14 +388,14 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
         url: link.url,
         text: link.text,
         domain: link.domain,
-        frequency: link.articles.size // Use unique article count instead of raw frequency
+        frequency: link.articles.size
       }))
-      .slice(0, 10); // Get top 10 most referenced links
+      .slice(0, 10);
 
     console.log('Final ranked links:', rankedLinks);
 
     // Generate titles and descriptions using the most common keywords
-    const topKeywords = rankedKeywords.slice(0, 3);
+    const topKeywords = rankedKeywords.slice(0, 3).map(k => k.text);
     const suggestedTitles = [
       `Complete Guide to ${keyword}: ${topKeywords[0] || ''}`,
       `Understanding ${keyword}: ${topKeywords[1] || ''} Explained`,
