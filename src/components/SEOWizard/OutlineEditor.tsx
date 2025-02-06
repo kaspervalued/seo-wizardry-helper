@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
-  DragHandle, 
+  GripVertical,
   Pencil, 
   Plus, 
   Trash2, 
@@ -171,7 +171,7 @@ export const OutlineEditor = ({
         depth > 0 ? 'ml-6' : ''
       }`}
     >
-      <DragHandle className="h-4 w-4 text-gray-400" />
+      <GripVertical className="h-4 w-4 text-gray-400" />
       
       {editingId === heading.id ? (
         <div className="flex-1 flex items-center gap-2">
