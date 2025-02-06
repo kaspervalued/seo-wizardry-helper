@@ -18,33 +18,38 @@ serve(async (req) => {
 
     console.log(`Starting analysis of ${urls.length} articles for keyword: ${keyword}`);
 
-    // Process all articles in parallel
-    const analysisPromises = urls.map(async (url: string) => {
+    // Process articles sequentially to avoid overwhelming the API
+    const analysisResults = [];
+    for (const url of urls) {
       try {
         console.log(`Processing article: ${url}`);
         const content = await extractArticleContent(url);
-        return await analyzeArticle(content);
+        if (!content) {
+          console.error(`Failed to extract content from ${url}`);
+          continue;
+        }
+        const analysis = await analyzeArticle(content);
+        if (analysis) {
+          analysisResults.push(analysis);
+        }
       } catch (error) {
         console.error(`Error processing article ${url}:`, error);
-        return null;
+        continue;
       }
-    });
+    }
 
-    const analysisResults = await Promise.all(analysisPromises);
-    const validAnalyses = analysisResults.filter(result => result !== null);
-
-    if (validAnalyses.length === 0) {
+    if (analysisResults.length === 0) {
       throw new Error('No articles could be successfully analyzed');
     }
 
-    console.log(`Successfully analyzed ${validAnalyses.length} articles`);
+    console.log(`Successfully analyzed ${analysisResults.length} articles`);
 
     // Generate ideal structure based on analyses
-    const idealStructure = await generateIdealStructure(validAnalyses, keyword);
+    const idealStructure = await generateIdealStructure(analysisResults, keyword);
 
     return new Response(
       JSON.stringify({
-        analyses: validAnalyses,
+        analyses: analysisResults,
         idealStructure,
       }),
       {
