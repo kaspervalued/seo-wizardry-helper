@@ -49,3 +49,16 @@ export interface IdealStructure {
   suggestedTitles: string[];
   suggestedDescriptions: string[];
 }
+
+export interface OutlineHeading {
+  id: string;
+  level: 'h2' | 'h3';
+  text: string;
+  content?: string;
+  children?: OutlineHeading[];
+}
+
+export interface ArticleOutline {
+  title: string;
+  headings: OutlineHeading[];
+}

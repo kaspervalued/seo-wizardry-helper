@@ -3,6 +3,7 @@ import { WizardProgress } from "@/components/SEOWizard/WizardProgress";
 import { KeywordForm } from "@/components/SEOWizard/KeywordForm";
 import { ArticleList } from "@/components/SEOWizard/ArticleList";
 import { AnalysisReport } from "@/components/SEOWizard/AnalysisReport";
+import { OutlineEditor } from "@/components/SEOWizard/OutlineEditor";
 import { supabase } from "@/integrations/supabase/client";
 import type { Article, ArticleAnalysis, IdealStructure } from "@/types/seo";
 import { useToast } from "@/components/ui/use-toast";
@@ -201,6 +202,14 @@ const Index = () => {
               analyses={analyses}
               idealStructure={idealStructure}
               onProceed={() => setCurrentStep(5)}
+            />
+          )}
+
+          {currentStep === 5 && idealStructure && !error && (
+            <OutlineEditor
+              analyses={analyses}
+              idealStructure={idealStructure}
+              onProceed={() => setCurrentStep(6)}
             />
           )}
         </div>
