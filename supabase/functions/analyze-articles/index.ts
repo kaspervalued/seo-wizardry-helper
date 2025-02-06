@@ -1,10 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { corsHeaders } from './utils.ts';
-import { fetchArticleContent, analyzeArticle } from './articleAnalysis.ts';
-import { generateIdealStructure } from './outlineGeneration.ts';
-import type { Article, AnalysisResponse } from './types.ts';
+import { corsHeaders } from "./utils.ts";
+import { analyzeArticle, extractArticleContent } from "./articleAnalysis.ts";
+import { generateIdealStructure } from "./outlineGeneration.ts";
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -12,50 +12,55 @@ serve(async (req) => {
   try {
     const { urls, keyword } = await req.json();
 
-    if (!Array.isArray(urls) || urls.length === 0 || !keyword) {
-      throw new Error('Invalid request: urls array and keyword are required');
+    if (!Array.isArray(urls) || urls.length === 0) {
+      throw new Error('No URLs provided for analysis');
     }
 
-    console.log(`Starting analysis for ${urls.length} articles with keyword: ${keyword}`);
+    console.log(`Starting analysis of ${urls.length} articles for keyword: ${keyword}`);
 
-    // Fetch and analyze articles in parallel
+    // Process all articles in parallel
     const analysisPromises = urls.map(async (url: string) => {
       try {
-        console.log(`Fetching content for ${url}`);
-        const content = await fetchArticleContent(url);
-        console.log(`Analyzing content for ${url}`);
-        return await analyzeArticle(url, content);
+        console.log(`Processing article: ${url}`);
+        const content = await extractArticleContent(url);
+        return await analyzeArticle(content);
       } catch (error) {
-        console.error(`Error analyzing article ${url}:`, error);
-        throw error;
+        console.error(`Error processing article ${url}:`, error);
+        return null;
       }
     });
 
-    const analyses = await Promise.all(analysisPromises);
-    console.log('All articles analyzed successfully');
+    const analysisResults = await Promise.all(analysisPromises);
+    const validAnalyses = analysisResults.filter(result => result !== null);
 
-    console.log('Generating ideal structure');
-    const idealStructure = await generateIdealStructure(analyses, keyword);
-    console.log('Ideal structure generated successfully');
+    if (validAnalyses.length === 0) {
+      throw new Error('No articles could be successfully analyzed');
+    }
 
-    const response: AnalysisResponse = {
-      analyses,
-      idealStructure
-    };
+    console.log(`Successfully analyzed ${validAnalyses.length} articles`);
 
-    return new Response(JSON.stringify(response), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  } catch (error) {
-    console.error('Error in analyze-articles function:', error);
+    // Generate ideal structure based on analyses
+    const idealStructure = await generateIdealStructure(validAnalyses, keyword);
+
     return new Response(
       JSON.stringify({
-        error: error.message,
-        details: error.stack
+        analyses: validAnalyses,
+        idealStructure,
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+  } catch (error) {
+    console.error('Error in analyze-articles function:', error);
+    
+    return new Response(
+      JSON.stringify({
+        error: error.message || 'An error occurred during analysis',
       }),
       {
         status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     );
   }

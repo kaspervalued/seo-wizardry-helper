@@ -1,20 +1,32 @@
-export interface Article {
-  title: string;
-  url: string;
-  snippet: string;
-  rank: number;
-}
-
 export interface ArticleContent {
   title: string;
+  url: string;
+  domain: string;
   text: string;
   html: string;
   meta: {
-    description?: string;
+    title: string;
+    description: string;
   };
+  images: Array<{
+    url: string;
+    title?: string;
+  }>;
 }
 
-export interface AnalysisResult {
+export interface HeadingStructure {
+  level: string;
+  text: string;
+}
+
+export interface ExternalLink {
+  url: string;
+  text: string;
+  domain: string;
+  frequency?: number;
+}
+
+export interface ArticleAnalysis {
   title: string;
   url: string;
   domain: string;
@@ -24,39 +36,20 @@ export interface AnalysisResult {
   paragraphsCount: number;
   imagesCount: number;
   videosCount: number;
-  externalLinks: Array<{
-    url: string;
-    text: string;
-    domain: string;
-  }>;
+  externalLinks: ExternalLink[];
   externalLinksCount: number;
   metaTitle: string;
   metaDescription: string;
   keywords: string[];
   readabilityScore: number;
-  headingStructure: Array<{
-    level: string;
-    text: string;
-  }>;
+  headingStructure: HeadingStructure[];
+  error?: string;
 }
 
 export interface IdealStructure {
   targetWordCount: number;
-  recommendedKeywords: Array<{
-    text: string;
-    frequency: number;
-  }>;
-  recommendedExternalLinks: Array<{
-    url: string;
-    text: string;
-    domain: string;
-    frequency: number;
-  }>;
+  recommendedKeywords: Array<{ text: string; frequency: number }>;
+  recommendedExternalLinks: ExternalLink[];
   suggestedTitles: string[];
   suggestedDescriptions: string[];
-}
-
-export interface AnalysisResponse {
-  analyses: AnalysisResult[];
-  idealStructure: IdealStructure;
 }
