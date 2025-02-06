@@ -373,14 +373,62 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
         frequency: data.articles.size
       }));
 
-    // Generate titles and descriptions using the most common keywords
-    const topKeywords = rankedKeywords.slice(0, 3).map(k => k.text);
-    const suggestedTitles = [
-      `Complete Guide to ${keyword}: ${topKeywords[0] || ''}`,
-      `Understanding ${keyword}: ${topKeywords[1] || ''} Explained`,
-      `${keyword} Best Practices: ${topKeywords[2] || ''}`
-    ];
+    // Generate SEO-optimized titles using OpenAI
+    const titlePrompt = `As an SEO expert, analyze this data and generate 3 SEO-optimized meta titles for an article about "${keyword}".
 
+Context:
+- Focus keyword: "${keyword}"
+- Analyzed titles from top-ranking articles:
+${analyses.map(a => `- ${a.title}`).join('\n')}
+- Key topics and phrases found:
+${rankedKeywords.slice(0, 10).map(k => `- ${k.text}`).join('\n')}
+
+Requirements:
+1. Create 3 unique, compelling titles that will compete with existing top articles
+2. Each title must:
+   - Include the focus keyword "${keyword}"
+   - Be 50-60 characters long
+   - Address search intent and user value
+   - Reflect the depth and comprehensiveness of the content
+   - Be optimized for both SEO and readability
+3. Format output as a simple list of 3 titles, one per line
+
+Generate only the titles, no explanations or additional text.`;
+
+    console.log('Sending title generation prompt to OpenAI:', titlePrompt);
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are an SEO expert that generates optimized titles.' },
+          { role: 'user', content: titlePrompt }
+        ],
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('OpenAI response:', data);
+
+    const suggestedTitles = data.choices[0].message.content
+      .split('\n')
+      .filter(Boolean)
+      .slice(0, 3);
+
+    console.log('Generated titles:', suggestedTitles);
+
+    // Generate descriptions using the most common keywords
+    const topKeywords = rankedKeywords.slice(0, 3).map(k => k.text);
     const suggestedDescriptions = [
       `Learn everything about ${keyword} including ${topKeywords.slice(0, 2).join(' and ')}. Comprehensive guide for beginners and experts.`,
       `Explore ${keyword} and understand ${topKeywords.slice(2, 4).join(' and ')}. Step-by-step tutorial with practical examples.`,
