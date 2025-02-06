@@ -13,7 +13,13 @@ serve(async (req) => {
     const { urls, keyword } = await req.json();
 
     if (!Array.isArray(urls) || urls.length === 0) {
+      console.error('No URLs provided for analysis');
       throw new Error('No URLs provided for analysis');
+    }
+
+    if (!keyword) {
+      console.error('No keyword provided for analysis');
+      throw new Error('No keyword provided for analysis');
     }
 
     console.log(`Starting analysis of ${urls.length} articles for keyword: ${keyword}`);
@@ -23,7 +29,9 @@ serve(async (req) => {
       try {
         console.log(`Processing article: ${url}`);
         const content = await extractArticleContent(url);
-        return await analyzeArticle(content);
+        const analysis = await analyzeArticle(content);
+        console.log(`Successfully processed article: ${url}`);
+        return analysis;
       } catch (error) {
         console.error(`Error processing article ${url}:`, error);
         return null;
@@ -33,11 +41,11 @@ serve(async (req) => {
     const analysisResults = await Promise.all(analysisPromises);
     const validAnalyses = analysisResults.filter(result => result !== null);
 
-    if (validAnalyses.length === 0) {
-      throw new Error('No articles could be successfully analyzed');
-    }
+    console.log(`Successfully analyzed ${validAnalyses.length} out of ${urls.length} articles`);
 
-    console.log(`Successfully analyzed ${validAnalyses.length} articles`);
+    if (validAnalyses.length === 0) {
+      throw new Error(`No articles could be successfully analyzed. Please check the provided URLs and try again.`);
+    }
 
     // Generate ideal structure based on analyses
     const idealStructure = await generateIdealStructure(validAnalyses, keyword);
