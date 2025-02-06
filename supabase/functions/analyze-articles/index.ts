@@ -13,59 +13,38 @@ serve(async (req) => {
     const { urls, keyword } = await req.json();
 
     if (!Array.isArray(urls) || urls.length === 0) {
-      console.error('No URLs provided for analysis');
       throw new Error('No URLs provided for analysis');
-    }
-
-    if (!keyword) {
-      console.error('No keyword provided for analysis');
-      throw new Error('No keyword provided for analysis');
-    }
-
-    const DIFFBOT_API_TOKEN = Deno.env.get('DIFFBOT_API_TOKEN');
-    if (!DIFFBOT_API_TOKEN) {
-      console.error('DIFFBOT_API_TOKEN is not configured');
-      throw new Error('DIFFBOT_API_TOKEN is not configured. Please set up the DIFFBOT_API_TOKEN in your Supabase Edge Function secrets.');
     }
 
     console.log(`Starting analysis of ${urls.length} articles for keyword: ${keyword}`);
 
-    // Process articles sequentially to avoid rate limits
-    const analysisResults = [];
-    for (const url of urls) {
+    // Process all articles in parallel
+    const analysisPromises = urls.map(async (url: string) => {
       try {
         console.log(`Processing article: ${url}`);
         const content = await extractArticleContent(url);
-        
-        if (!content) {
-          console.error(`Failed to extract content from ${url}`);
-          continue;
-        }
-
-        const analysis = await analyzeArticle(content);
-        if (analysis) {
-          analysisResults.push(analysis);
-          console.log(`Successfully analyzed article: ${url}`);
-        } else {
-          console.error(`Failed to analyze content from ${url}`);
-        }
+        return await analyzeArticle(content);
       } catch (error) {
         console.error(`Error processing article ${url}:`, error);
+        return null;
       }
+    });
+
+    const analysisResults = await Promise.all(analysisPromises);
+    const validAnalyses = analysisResults.filter(result => result !== null);
+
+    if (validAnalyses.length === 0) {
+      throw new Error('No articles could be successfully analyzed');
     }
 
-    console.log(`Successfully analyzed ${analysisResults.length} out of ${urls.length} articles`);
-
-    if (analysisResults.length === 0) {
-      throw new Error('No articles could be successfully analyzed. This might be due to invalid URLs or API rate limits. Please try again with different URLs.');
-    }
+    console.log(`Successfully analyzed ${validAnalyses.length} articles`);
 
     // Generate ideal structure based on analyses
-    const idealStructure = await generateIdealStructure(analysisResults, keyword);
+    const idealStructure = await generateIdealStructure(validAnalyses, keyword);
 
     return new Response(
       JSON.stringify({
-        analyses: analysisResults,
+        analyses: validAnalyses,
         idealStructure,
       }),
       {
