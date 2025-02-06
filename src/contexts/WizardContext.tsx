@@ -1,4 +1,4 @@
-import { createContext, useContext, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode } from "react";
 import { Article, ArticleAnalysis, IdealStructure } from "@/types/seo";
 
 interface WizardContextType {
