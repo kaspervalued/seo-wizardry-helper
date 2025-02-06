@@ -3,12 +3,12 @@ import { calculateReadabilityScore, extractDomain, extractExternalLinks, fetchWi
 
 const DIFFBOT_API_TOKEN = Deno.env.get('DIFFBOT_API_TOKEN');
 
-export async function extractArticleContent(url: string): Promise<ArticleContent> {
+export async function extractArticleContent(url: string): Promise<ArticleContent | null> {
   console.log(`Extracting content from: ${url}`);
   
   if (!DIFFBOT_API_TOKEN) {
     console.error('DIFFBOT_API_TOKEN is not set');
-    throw new Error('DIFFBOT_API_TOKEN is not configured');
+    return null;
   }
   
   const diffbotUrl = `https://api.diffbot.com/v3/article?token=${DIFFBOT_API_TOKEN}&url=${encodeURIComponent(url)}`;
@@ -19,7 +19,7 @@ export async function extractArticleContent(url: string): Promise<ArticleContent
     
     if (!response.ok) {
       console.error(`Diffbot API error for ${url}: ${response.status} ${response.statusText}`);
-      throw new Error(`Diffbot API error: ${response.status} ${response.statusText}`);
+      return null;
     }
     
     const data = await response.json();
@@ -27,14 +27,14 @@ export async function extractArticleContent(url: string): Promise<ArticleContent
     
     if (!data.objects || data.objects.length === 0) {
       console.error(`No article content found for ${url}`, data);
-      throw new Error('No article content found');
+      return null;
     }
     
     const article = data.objects[0];
     
     if (!article.text || !article.html) {
       console.error(`Invalid article content for ${url}`, article);
-      throw new Error('Invalid article content');
+      return null;
     }
     
     return {
@@ -51,11 +51,11 @@ export async function extractArticleContent(url: string): Promise<ArticleContent
     };
   } catch (error) {
     console.error(`Error extracting content from ${url}:`, error);
-    throw error;
+    return null;
   }
 }
 
-export async function analyzeArticle(content: ArticleContent): Promise<ArticleAnalysis> {
+export async function analyzeArticle(content: ArticleContent): Promise<ArticleAnalysis | null> {
   console.log(`Analyzing article: ${content.title}`);
   
   try {
@@ -108,6 +108,6 @@ export async function analyzeArticle(content: ArticleContent): Promise<ArticleAn
     return analysis;
   } catch (error) {
     console.error(`Error analyzing article ${content.title}:`, error);
-    throw error;
+    return null;
   }
 }

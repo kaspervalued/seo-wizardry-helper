@@ -22,37 +22,47 @@ serve(async (req) => {
       throw new Error('No keyword provided for analysis');
     }
 
+    const DIFFBOT_API_TOKEN = Deno.env.get('DIFFBOT_API_TOKEN');
+    if (!DIFFBOT_API_TOKEN) {
+      console.error('DIFFBOT_API_TOKEN is not configured');
+      throw new Error('DIFFBOT_API_TOKEN is not configured');
+    }
+
     console.log(`Starting analysis of ${urls.length} articles for keyword: ${keyword}`);
 
-    // Process all articles in parallel
-    const analysisPromises = urls.map(async (url: string) => {
+    // Process articles sequentially to avoid rate limits
+    const analysisResults = [];
+    for (const url of urls) {
       try {
         console.log(`Processing article: ${url}`);
         const content = await extractArticleContent(url);
+        if (!content) {
+          console.error(`No content extracted from ${url}`);
+          continue;
+        }
         const analysis = await analyzeArticle(content);
-        console.log(`Successfully processed article: ${url}`);
-        return analysis;
+        if (analysis) {
+          analysisResults.push(analysis);
+          console.log(`Successfully processed article: ${url}`);
+        }
       } catch (error) {
         console.error(`Error processing article ${url}:`, error);
-        return null;
+        // Continue with other articles even if one fails
       }
-    });
+    }
 
-    const analysisResults = await Promise.all(analysisPromises);
-    const validAnalyses = analysisResults.filter(result => result !== null);
+    console.log(`Successfully analyzed ${analysisResults.length} out of ${urls.length} articles`);
 
-    console.log(`Successfully analyzed ${validAnalyses.length} out of ${urls.length} articles`);
-
-    if (validAnalyses.length === 0) {
-      throw new Error(`No articles could be successfully analyzed. Please check the provided URLs and try again.`);
+    if (analysisResults.length === 0) {
+      throw new Error('No articles could be successfully analyzed. Please check the provided URLs and try again.');
     }
 
     // Generate ideal structure based on analyses
-    const idealStructure = await generateIdealStructure(validAnalyses, keyword);
+    const idealStructure = await generateIdealStructure(analysisResults, keyword);
 
     return new Response(
       JSON.stringify({
-        analyses: validAnalyses,
+        analyses: analysisResults,
         idealStructure,
       }),
       {
