@@ -441,7 +441,7 @@ Generate only the titles, no explanations or additional text.`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4-1106-preview',
         messages: [
           { role: 'system', content: 'You are an SEO expert that generates optimized titles.' },
           { role: 'user', content: titlePrompt }
@@ -502,7 +502,7 @@ Generate only the descriptions, no explanations or additional text.`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4-1106-preview',
         messages: [
           { role: 'system', content: 'You are an SEO expert that generates optimized meta descriptions.' },
           { role: 'user', content: descriptionPrompt }
