@@ -48,6 +48,7 @@ export interface IdealStructure {
   recommendedExternalLinks: ExternalLink[];
   suggestedTitles: string[];
   suggestedDescriptions: string[];
+  outline: OutlineHeading[];
 }
 
 export interface OutlineHeading {

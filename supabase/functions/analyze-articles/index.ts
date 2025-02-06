@@ -328,7 +328,7 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
     }));
 
     // Generate master outline using OpenAI
-    const outlinePrompt = `As an SEO expert, analyze this data and generate the perfect article outline for "${keyword}" that will outrank all existing articles.
+    const outlinePrompt = `As an expert SEO content strategist, analyze this data and generate the perfect article outline that will outrank all existing articles for "${keyword}".
 
 Context:
 - Focus keyword: "${keyword}"
@@ -341,13 +341,21 @@ Keywords: ${content.keywords.join(', ')}
 `).join('\n')}
 
 Requirements for the perfect outline:
-1. Create a comprehensive outline that covers both SAST and DAST equally
-2. Include clear comparisons between the two approaches
-3. Address all major aspects: definitions, differences, use cases, benefits, limitations
-4. Structure the content to demonstrate expertise and authority
-5. Include practical implementation guidance
+1. Create a comprehensive outline that covers all essential aspects of "${keyword}"
+2. Structure the content to demonstrate deep expertise and authority
+3. Address user intent comprehensively by answering all relevant questions
+4. Include practical examples, use cases, and implementation guidance where relevant
+5. Cover both basic concepts for beginners and advanced insights for experts
 6. Target length: ${calculatedTargetWordCount} words
 7. Format as a hierarchical outline with H2 and H3 headings only
+
+Additional guidelines:
+- Ensure logical flow and progression of topics
+- Include sections that competitors might have missed
+- Balance theory with practical application
+- Consider both beginner and advanced user needs
+- Include clear comparisons and evaluations where relevant
+- Address common questions and concerns
 
 Generate a detailed outline that will help create the definitive guide on this topic. Format as:
 {
