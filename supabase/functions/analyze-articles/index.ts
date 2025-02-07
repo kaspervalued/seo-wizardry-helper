@@ -14,17 +14,12 @@ if (!openAIApiKey) {
   throw new Error('OPENAI_API_KEY not set');
 }
 
-async function analyzeArticle(url: string, keyword: string, index: number, total: number) {
-  console.log(`[Analysis] Starting analysis for article ${index + 1}/${total}: ${url}`);
+async function analyzeArticle(url: string, keyword: string) {
+  console.log(`Starting analysis for ${url}`);
   
   try {
-    // Delay based on position to respect rate limits (12 seconds between articles)
-    // This ensures we stay well under the 5 calls per minute limit
-    const delay = index * 12000;
-    if (delay > 0) {
-      console.log(`[Analysis] Waiting ${delay}ms before processing next article...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
+    // Add delay between articles to respect rate limits
+    await new Promise(resolve => setTimeout(resolve, 2000));
     
     const [article, metaDescription] = await Promise.all([
       fetchWithDiffbot(url),
@@ -32,35 +27,34 @@ async function analyzeArticle(url: string, keyword: string, index: number, total
     ]);
     
     if (!article.text) {
-      console.error(`[Analysis] No content extracted from ${url}`);
+      console.error(`No content extracted from ${url}`);
       return null;
     }
 
     const textContent = article.text;
     const wordCount = textContent.split(/\s+/).length;
     
-    // Small delay before OpenAI call to prevent rate limiting
     await new Promise(resolve => setTimeout(resolve, 1000));
     const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
 
     const articleDomain = extractDomain(url);
-    console.log('[Analysis] Article domain:', articleDomain);
+    console.log('Article domain:', articleDomain);
 
     const links = [];
     
     if (article.links && Array.isArray(article.links)) {
-      console.log('[Analysis] Found links in Diffbot response:', article.links.length);
+      console.log('Found links in Diffbot response:', article.links.length);
       links.push(...article.links);
     }
     
     if (article.html) {
       const htmlLinks = extractLinksFromHTML(article.html);
-      console.log('[Analysis] Found links in HTML content:', htmlLinks.length);
+      console.log('Found links in HTML content:', htmlLinks.length);
       links.push(...htmlLinks);
     }
     
     if (article.resolved_urls && Array.isArray(article.resolved_urls)) {
-      console.log('[Analysis] Found resolved URLs:', article.resolved_urls.length);
+      console.log('Found resolved URLs:', article.resolved_urls.length);
       article.resolved_urls.forEach(resolvedUrl => {
         if (!links.some(l => l.href === resolvedUrl)) {
           links.push({
@@ -71,7 +65,7 @@ async function analyzeArticle(url: string, keyword: string, index: number, total
       });
     }
 
-    console.log('[Analysis] Total links found before filtering:', links.length);
+    console.log('Total links found before filtering:', links.length);
 
     const externalLinks = links
       .filter(link => {
@@ -82,7 +76,7 @@ async function analyzeArticle(url: string, keyword: string, index: number, total
                  linkDomain !== articleDomain && 
                  link.href.startsWith('http');
         } catch (error) {
-          console.error('[Analysis] Error processing link:', link, error);
+          console.error('Error processing link:', link, error);
           return false;
         }
       })
@@ -98,7 +92,7 @@ async function analyzeArticle(url: string, keyword: string, index: number, total
         index === self.findIndex((l) => l.url === link.url)
       );
 
-    console.log('[Analysis] Final external links count:', externalLinks.length);
+    console.log('Final external links count:', externalLinks.length);
 
     const headings = [];
     if (article.html) {
@@ -134,14 +128,14 @@ async function analyzeArticle(url: string, keyword: string, index: number, total
       headingStructure: headings,
     };
   } catch (error) {
-    console.error(`[Analysis] Error analyzing article ${url}:`, error);
+    console.error(`Error analyzing article ${url}:`, error);
     throw error;
   }
 }
 
 async function generateIdealStructure(analyses: any[], keyword: string) {
   try {
-    console.log('[Analysis] Starting generateIdealStructure with analyses:', analyses.length);
+    console.log('Starting generateIdealStructure with analyses:', analyses.length);
     
     const validWordCounts = analyses
       .map(a => a.wordCount)
@@ -199,7 +193,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
   ]
 }`;
 
-    console.log('[Analysis] Sending outline generation prompt to OpenAI');
+    console.log('Sending outline generation prompt to OpenAI:', outlinePrompt);
 
     const outlineResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -208,7 +202,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4-1106-preview',
+        model: 'gpt-4o',
         messages: [
           { 
             role: 'system', 
@@ -221,25 +215,19 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
     });
 
     if (!outlineResponse.ok) {
-      const errorText = await outlineResponse.text();
-      console.error('[Analysis] OpenAI API error response:', {
-        status: outlineResponse.status,
-        statusText: outlineResponse.statusText,
-        body: errorText
-      });
-      throw new Error(`OpenAI API error: ${outlineResponse.status} - ${errorText}`);
+      throw new Error(`OpenAI API error: ${outlineResponse.status}`);
     }
 
     const outlineData = await outlineResponse.json();
-    console.log('[Analysis] Raw OpenAI response:', outlineData);
+    console.log('Raw OpenAI response:', outlineData);
 
     let generatedOutline;
     try {
       const content = outlineData.choices[0].message.content.trim();
-      console.log('[Analysis] Parsing outline content:', content);
+      console.log('Parsing outline content:', content);
       generatedOutline = JSON.parse(content);
     } catch (parseError) {
-      console.error('[Analysis] Error parsing outline JSON:', parseError);
+      console.error('Error parsing outline JSON:', parseError);
       throw new Error('Failed to parse outline JSON from OpenAI response');
     }
 
@@ -306,7 +294,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
       });
     });
 
-    console.log('[Analysis] Link frequency map:', 
+    console.log('Link frequency map:', 
       Array.from(linkFrequencyMap.entries()).map(([url, data]) => ({
         url,
         articleCount: data.articles.size,
@@ -333,7 +321,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
       }))
       .slice(0, 10);
 
-    console.log('[Analysis] Final ranked links:', rankedLinks);
+    console.log('Final ranked links:', rankedLinks);
 
     // Sort keywords by frequency and article count
     const rankedKeywords = Array.from(keywordFrequencyMap.entries())
@@ -376,7 +364,7 @@ Requirements:
 
 Generate only the titles, no explanations or additional text.`;
 
-    console.log('[Analysis] Sending title generation prompt to OpenAI');
+    console.log('Sending title generation prompt to OpenAI:', titlePrompt);
 
     const titleResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -395,13 +383,7 @@ Generate only the titles, no explanations or additional text.`;
     });
 
     if (!titleResponse.ok) {
-      const errorText = await titleResponse.text();
-      console.error('[Analysis] OpenAI API error response:', {
-        status: titleResponse.status,
-        statusText: titleResponse.statusText,
-        body: errorText
-      });
-      throw new Error(`OpenAI API error: ${titleResponse.status} - ${errorText}`);
+      throw new Error(`OpenAI API error: ${titleResponse.status}`);
     }
 
     const titleData = await titleResponse.json();
@@ -410,7 +392,7 @@ Generate only the titles, no explanations or additional text.`;
       .filter(Boolean)
       .slice(0, 3);
 
-    console.log('[Analysis] Generated titles:', suggestedTitles);
+    console.log('Generated titles:', suggestedTitles);
 
     // Generate SEO-optimized descriptions using OpenAI
     const descriptionPrompt = `As an SEO expert, analyze this data and generate 3 SEO-optimized meta descriptions for an article about "${keyword}".
@@ -443,7 +425,7 @@ Requirements:
 
 Generate only the descriptions, no explanations or additional text.`;
 
-    console.log('[Analysis] Sending description generation prompt to OpenAI');
+    console.log('Sending description generation prompt to OpenAI:', descriptionPrompt);
 
     const descriptionResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -462,13 +444,7 @@ Generate only the descriptions, no explanations or additional text.`;
     });
 
     if (!descriptionResponse.ok) {
-      const errorText = await descriptionResponse.text();
-      console.error('[Analysis] OpenAI API error response:', {
-        status: descriptionResponse.status,
-        statusText: descriptionResponse.statusText,
-        body: errorText
-      });
-      throw new Error(`OpenAI API error: ${descriptionResponse.status} - ${errorText}`);
+      throw new Error(`OpenAI API error: ${descriptionResponse.status}`);
     }
 
     const descriptionData = await descriptionResponse.json();
@@ -477,7 +453,7 @@ Generate only the descriptions, no explanations or additional text.`;
       .filter(Boolean)
       .slice(0, 3);
 
-    console.log('[Analysis] Generated descriptions:', suggestedDescriptions);
+    console.log('Generated descriptions:', suggestedDescriptions);
 
     return {
       targetWordCount: calculatedTargetWordCount || 1500,
@@ -488,12 +464,13 @@ Generate only the descriptions, no explanations or additional text.`;
       outline: generatedOutline.headings,
     };
   } catch (error) {
-    console.error('[Analysis] Error in generateIdealStructure:', error);
+    console.error('Error in generateIdealStructure:', error);
     throw error;
   }
 }
 
 serve(async (req) => {
+  // Always handle CORS preflight first
   if (req.method === 'OPTIONS') {
     return new Response(null, { 
       headers: corsHeaders 
@@ -501,12 +478,12 @@ serve(async (req) => {
   }
 
   try {
-    console.log('[Analysis] Received request to analyze-articles function');
+    console.log('Received request to analyze-articles function');
     
     const requestBody = await req.json();
     const { urls, keyword } = requestBody;
     
-    console.log('[Analysis] Request data:', { urls, keyword });
+    console.log('Request data:', { urls, keyword });
     
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
       throw new Error('No URLs provided for analysis');
@@ -516,22 +493,20 @@ serve(async (req) => {
       throw new Error('No keyword provided for analysis');
     }
 
-    console.log(`[Analysis] Starting sequential analysis for ${urls.length} URLs`);
+    console.log('Starting analysis for URLs:', urls);
     
-    // Process articles sequentially to respect rate limits
+    // Process articles sequentially with delay between each
     const results = [];
-    const errors = [];
-    
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i];
+    for (const url of urls) {
       try {
-        console.log(`[Analysis] Processing URL ${i + 1}/${urls.length}: ${url}`);
-        
-        const result = await analyzeArticle(url, keyword, i, urls.length);
+        console.log(`Processing URL: ${url}`);
+        const result = await analyzeArticle(url, keyword);
         if (result) results.push(result);
+        // Add delay between articles
+        await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (error) {
-        console.error(`[Analysis] Failed to analyze article ${url}:`, error);
-        errors.push({ url, error: error.message });
+        console.error(`Failed to analyze article ${url}:`, error);
+        // Continue with other articles even if one fails
       }
     }
 
@@ -541,14 +516,12 @@ serve(async (req) => {
 
     const idealStructure = await generateIdealStructure(results, keyword);
 
-    console.log('[Analysis] Analysis completed successfully');
-    console.log('[Analysis] Errors encountered:', errors.length > 0 ? errors : 'None');
+    console.log('Analysis completed successfully');
 
     return new Response(
       JSON.stringify({
         analyses: results,
         idealStructure,
-        errors: errors.length > 0 ? errors : undefined,
       }),
       {
         headers: {
@@ -558,8 +531,9 @@ serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error('[Analysis] Error in analyze-articles function:', error);
+    console.error('Error in analyze-articles function:', error);
     
+    // Always return error responses with CORS headers
     return new Response(
       JSON.stringify({ 
         error: error.message || 'Internal server error',

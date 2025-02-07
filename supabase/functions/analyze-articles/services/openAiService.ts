@@ -10,10 +10,7 @@ export async function extractKeyPhrasesWithAI(content: string, keyword: string):
   try {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    console.log('[OpenAI] Making request to extract key phrases...');
-    console.log('[OpenAI] Content length:', content.length);
-    console.log('[OpenAI] Keyword:', keyword);
-    
+    console.log('Making request to OpenAI API...');
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -21,7 +18,7 @@ export async function extractKeyPhrasesWithAI(content: string, keyword: string):
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4-1106-preview',
+        model: 'gpt-4o',
         messages: [
           {
             role: 'system',
@@ -48,32 +45,26 @@ export async function extractKeyPhrasesWithAI(content: string, keyword: string):
             content: content.substring(0, 4000)
           }
         ],
+        temperature: 0.3,
       }),
     });
 
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('[OpenAI] API error response:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorData
-      });
+      console.error('OpenAI API error response:', errorData);
       throw new Error(`OpenAI API error: ${response.status} - ${errorData}`);
     }
 
     const data = await response.json();
-    console.log('[OpenAI] Successfully received response');
+    console.log('Successfully received OpenAI API response');
     
-    const phrases = data.choices[0].message.content
+    return data.choices[0].message.content
       .split('\n')
       .map(phrase => phrase.trim())
       .filter(Boolean)
       .map(phrase => phrase.replace(/^[-•*]\s*/, '')); // Remove any remaining bullet points or dashes
-    
-    console.log('[OpenAI] Extracted phrases:', phrases);
-    return phrases;
   } catch (error) {
-    console.error('[OpenAI] Error in extractKeyPhrasesWithAI:', error);
+    console.error('Error in extractKeyPhrasesWithAI:', error);
     throw error;
   }
 }

@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { WizardProgress } from "@/components/SEOWizard/WizardProgress";
 import { KeywordForm } from "@/components/SEOWizard/KeywordForm";
@@ -14,8 +13,8 @@ import { Button } from "@/components/ui/button";
 import { AlertCircle } from "lucide-react";
 
 const TOTAL_STEPS = 7;
-const MAX_RETRIES = 5;
-const INITIAL_RETRY_DELAY = 1000; // 1 second
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 2000; // 2 seconds
 
 const Index = () => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -79,9 +78,7 @@ const Index = () => {
       console.error(`Attempt ${retryCount + 1} failed:`, error);
       
       if (retryCount < MAX_RETRIES) {
-        const retryDelay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount); // Exponential backoff
-        console.log(`Retrying in ${retryDelay}ms...`);
-        await delay(retryDelay);
+        await delay(RETRY_DELAY * (retryCount + 1));
         return invokeAnalysisFunction(articles, keyword, retryCount + 1);
       }
       throw error;
@@ -108,7 +105,7 @@ const Index = () => {
     setCurrentStep(3);
     
     try {
-      setAnalysisStatus("Initializing analysis... Please wait while we process your request.\nThis might take 1-2 minutes. Don't close this tab!");
+      setAnalysisStatus("Fetching article contents... (This might take 1-2 minutes)\nDon't close this tab, we're analyzing everything in detail!");
       
       const data = await invokeAnalysisFunction(articlesToAnalyze, currentKeyword);
 
@@ -121,11 +118,10 @@ const Index = () => {
       setCurrentStep(4);
     } catch (error) {
       console.error('Error analyzing articles:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to analyze articles';
-      setError(errorMessage);
+      setError(error instanceof Error ? error.message : 'Failed to analyze articles');
       toast({
         title: "Analysis Error",
-        description: `Failed to analyze the selected articles: ${errorMessage}. Please try again in a few moments.`,
+        description: "Failed to analyze the selected articles. Please try again in a few moments.",
         variant: "destructive",
       });
       setCurrentStep(2);
