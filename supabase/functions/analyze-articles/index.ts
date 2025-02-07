@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders } from './utils/cors.ts';
@@ -451,8 +450,11 @@ Generate only the descriptions, no explanations or additional text.`;
 }
 
 serve(async (req) => {
+  // Always handle CORS preflight first
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { 
+      headers: corsHeaders 
+    });
   }
 
   try {
@@ -511,10 +513,11 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in analyze-articles function:', error);
     
+    // Always return error responses with CORS headers
     return new Response(
       JSON.stringify({ 
-        error: error.message,
-        details: error.stack
+        error: error.message || 'Internal server error',
+        details: error.stack || undefined
       }),
       {
         status: 500,
