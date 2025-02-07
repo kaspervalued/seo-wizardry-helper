@@ -27,8 +27,18 @@ export async function extractKeyPhrasesWithAI(content: string, keyword: string):
             2. Highly relevant to the main topic "${keyword}"
             3. Technical or industry-specific terms
             
-            Format each key phrase as a simple string without any additional explanation or formatting.
-            Return only the key phrases, one per line.`
+            Rules:
+            - Return only complete, clean key phrases without any prefixes or special characters
+            - Each phrase should be meaningful and self-contained
+            - Do not include dashes, bullet points, or any other formatting
+            - Format as plain text, one phrase per line
+            
+            For example:
+            Static Application Security Testing
+            Dynamic Application Security Testing
+            Source Code Analysis
+            Runtime Detection
+            Vulnerability Scanning`
           },
           {
             role: 'user',
@@ -51,7 +61,8 @@ export async function extractKeyPhrasesWithAI(content: string, keyword: string):
     return data.choices[0].message.content
       .split('\n')
       .map(phrase => phrase.trim())
-      .filter(Boolean);
+      .filter(Boolean)
+      .map(phrase => phrase.replace(/^[-•*]\s*/, '')); // Remove any remaining bullet points or dashes
   } catch (error) {
     console.error('Error in extractKeyPhrasesWithAI:', error);
     throw error;

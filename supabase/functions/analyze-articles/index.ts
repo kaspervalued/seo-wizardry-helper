@@ -254,12 +254,13 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
       });
     });
 
-    // Aggregate and rank external links from all articles
+    // Aggregate and rank external links from all articles with improved counting
     const linkFrequencyMap = new Map<string, { 
       url: string; 
       text: string; 
       domain: string; 
       articles: Set<string>;
+      totalMentions: number; // Add total mentions counter
     }>();
     
     analyses.forEach(analysis => {
@@ -268,16 +269,26 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
         return;
       }
 
+      // Count both unique articles and total mentions
+      const processedUrls = new Set<string>(); // Track processed URLs per article
+      
       analysis.externalLinks.forEach(link => {
         const existingLink = linkFrequencyMap.get(link.url);
         if (existingLink) {
           existingLink.articles.add(analysis.url);
+          existingLink.totalMentions++; // Increment total mentions
+          
+          // Update text if current one is more descriptive
+          if (link.text && link.text.length > existingLink.text.length) {
+            existingLink.text = link.text;
+          }
         } else {
           linkFrequencyMap.set(link.url, {
             url: link.url,
             text: link.text,
             domain: link.domain,
-            articles: new Set([analysis.url])
+            articles: new Set([analysis.url]),
+            totalMentions: 1
           });
         }
       });
@@ -286,18 +297,27 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
     console.log('Link frequency map:', 
       Array.from(linkFrequencyMap.entries()).map(([url, data]) => ({
         url,
-        articleCount: data.articles.size
+        articleCount: data.articles.size,
+        totalMentions: data.totalMentions
       }))
     );
 
-    // Sort links by number of articles they appear in
+    // Sort links by both unique articles and total mentions
     const rankedLinks = Array.from(linkFrequencyMap.values())
-      .sort((a, b) => b.articles.size - a.articles.size)
+      .sort((a, b) => {
+        // First sort by number of unique articles
+        const articleDiff = b.articles.size - a.articles.size;
+        if (articleDiff !== 0) return articleDiff;
+        
+        // If same number of articles, sort by total mentions
+        return b.totalMentions - a.totalMentions;
+      })
       .map(link => ({
         url: link.url,
         text: link.text,
         domain: link.domain,
-        frequency: link.articles.size
+        frequency: link.articles.size,
+        totalMentions: link.totalMentions
       }))
       .slice(0, 10);
 
