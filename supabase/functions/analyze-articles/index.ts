@@ -209,7 +209,7 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
+        model: 'gpt-4-1106-preview',
         messages: [
           { 
             role: 'system', 
