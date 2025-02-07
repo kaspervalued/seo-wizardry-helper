@@ -1,3 +1,4 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders } from './utils/cors.ts';
@@ -14,12 +15,17 @@ if (!openAIApiKey) {
   throw new Error('OPENAI_API_KEY not set');
 }
 
-async function analyzeArticle(url: string, keyword: string) {
-  console.log(`Starting analysis for ${url}`);
+async function analyzeArticle(url: string, keyword: string, index: number, total: number) {
+  console.log(`Starting analysis for article ${index + 1}/${total}: ${url}`);
   
   try {
-    // Add delay between articles to respect rate limits
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Delay based on position to respect rate limits (12 seconds between articles)
+    // This ensures we stay well under the 5 calls per minute limit
+    const delay = index * 12000;
+    if (delay > 0) {
+      console.log(`Waiting ${delay}ms before processing next article...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
     
     const [article, metaDescription] = await Promise.all([
       fetchWithDiffbot(url),
@@ -34,6 +40,7 @@ async function analyzeArticle(url: string, keyword: string) {
     const textContent = article.text;
     const wordCount = textContent.split(/\s+/).length;
     
+    // Small delay before OpenAI call to prevent rate limiting
     await new Promise(resolve => setTimeout(resolve, 1000));
     const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
 
@@ -470,7 +477,6 @@ Generate only the descriptions, no explanations or additional text.`;
 }
 
 serve(async (req) => {
-  // Always handle CORS preflight first
   if (req.method === 'OPTIONS') {
     return new Response(null, { 
       headers: corsHeaders 
@@ -493,20 +499,47 @@ serve(async (req) => {
       throw new Error('No keyword provided for analysis');
     }
 
-    console.log('Starting analysis for URLs:', urls);
+    console.log(`Starting sequential analysis for ${urls.length} URLs`);
     
-    // Process articles sequentially with delay between each
+    // Process articles sequentially to respect rate limits
     const results = [];
-    for (const url of urls) {
+    const errors = [];
+    
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
       try {
-        console.log(`Processing URL: ${url}`);
-        const result = await analyzeArticle(url, keyword);
+        console.log(`Processing URL ${i + 1}/${urls.length}: ${url}`);
+        
+        // Create a progress update response
+        const progressUpdate = new Response(
+          JSON.stringify({ 
+            type: 'progress',
+            current: i + 1,
+            total: urls.length,
+            currentUrl: url
+          }),
+          {
+            headers: {
+              ...corsHeaders,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        
+        // Use background task to send progress update
+        EdgeRuntime.waitUntil(
+          fetch(req.url, {
+            method: 'POST',
+            headers: progressUpdate.headers,
+            body: progressUpdate.body,
+          })
+        );
+        
+        const result = await analyzeArticle(url, keyword, i, urls.length);
         if (result) results.push(result);
-        // Add delay between articles
-        await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (error) {
         console.error(`Failed to analyze article ${url}:`, error);
-        // Continue with other articles even if one fails
+        errors.push({ url, error: error.message });
       }
     }
 
@@ -517,11 +550,13 @@ serve(async (req) => {
     const idealStructure = await generateIdealStructure(results, keyword);
 
     console.log('Analysis completed successfully');
+    console.log('Errors encountered:', errors.length > 0 ? errors : 'None');
 
     return new Response(
       JSON.stringify({
         analyses: results,
         idealStructure,
+        errors: errors.length > 0 ? errors : undefined,
       }),
       {
         headers: {
@@ -533,7 +568,6 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in analyze-articles function:', error);
     
-    // Always return error responses with CORS headers
     return new Response(
       JSON.stringify({ 
         error: error.message || 'Internal server error',
