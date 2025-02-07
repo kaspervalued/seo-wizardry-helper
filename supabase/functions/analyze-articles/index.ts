@@ -1,3 +1,4 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders } from './utils/cors.ts';
@@ -5,6 +6,14 @@ import { extractDomain, extractLinksFromHTML } from './utils/urlUtils.ts';
 import { fetchWithDiffbot, type DiffbotArticle } from './services/diffbotService.ts';
 import { fetchMetaDescriptionWithSerpApi } from './services/serpApiService.ts';
 import { extractKeyPhrasesWithAI } from './services/openAiService.ts';
+
+// Get OpenAI API key from environment
+const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+
+if (!openAIApiKey) {
+  console.error('Missing OpenAI API key');
+  throw new Error('OPENAI_API_KEY not set');
+}
 
 async function analyzeArticle(url: string, keyword: string) {
   console.log(`Starting analysis for ${url}`);
