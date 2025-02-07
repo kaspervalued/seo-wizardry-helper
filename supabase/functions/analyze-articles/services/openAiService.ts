@@ -18,7 +18,7 @@ export async function extractKeyPhrasesWithAI(content: string, keyword: string):
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         messages: [
           {
             role: 'system',
@@ -57,4 +57,3 @@ export async function extractKeyPhrasesWithAI(content: string, keyword: string):
     throw error;
   }
 }
-
