@@ -15,20 +15,20 @@ if (!openAIApiKey) {
 }
 
 async function analyzeArticle(url: string, keyword: string) {
-  console.log(`Starting analysis for ${url}`);
+  console.log(`[Analysis] Starting analysis for ${url}`);
   
   try {
     // Run Diffbot and SerpAPI calls concurrently
     const [article, metaDescription] = await Promise.all([
       fetchWithDiffbot(url),
       fetchMetaDescriptionWithSerpApi(url).catch(error => {
-        console.error(`SerpAPI error for ${url}:`, error);
+        console.error(`[SerpAPI] Error for ${url}:`, error);
         return null; // Continue with null meta description if SerpAPI fails
       })
     ]);
     
     if (!article.text) {
-      console.error(`No content extracted from ${url}`);
+      console.error(`[Analysis] No content extracted from ${url}`);
       throw new Error(`No content extracted from ${url}`);
     }
 
@@ -37,28 +37,28 @@ async function analyzeArticle(url: string, keyword: string) {
     
     // Extract keywords concurrently with other processing
     const keywordsPromise = extractKeyPhrasesWithAI(textContent, keyword).catch(error => {
-      console.error(`OpenAI error for ${url}:`, error);
+      console.error(`[OpenAI] Error for ${url}:`, error);
       return []; // Continue with empty keywords if OpenAI fails
     });
 
     const articleDomain = extractDomain(url);
-    console.log('Article domain:', articleDomain);
+    console.log('[Analysis] Article domain:', articleDomain);
 
     const links = [];
     
     if (article.links && Array.isArray(article.links)) {
-      console.log(`Found ${article.links.length} links in Diffbot response for ${url}`);
+      console.log(`[Analysis] Found ${article.links.length} links in Diffbot response for ${url}`);
       links.push(...article.links);
     }
     
     if (article.html) {
       const htmlLinks = extractLinksFromHTML(article.html);
-      console.log(`Found ${htmlLinks.length} links in HTML content for ${url}`);
+      console.log(`[Analysis] Found ${htmlLinks.length} links in HTML content for ${url}`);
       links.push(...htmlLinks);
     }
     
     if (article.resolved_urls && Array.isArray(article.resolved_urls)) {
-      console.log(`Found ${article.resolved_urls.length} resolved URLs for ${url}`);
+      console.log(`[Analysis] Found ${article.resolved_urls.length} resolved URLs for ${url}`);
       article.resolved_urls.forEach(resolvedUrl => {
         if (!links.some(l => l.href === resolvedUrl)) {
           links.push({
@@ -69,7 +69,7 @@ async function analyzeArticle(url: string, keyword: string) {
       });
     }
 
-    console.log(`Total links found before filtering for ${url}:`, links.length);
+    console.log(`[Analysis] Total links found before filtering for ${url}:`, links.length);
 
     const externalLinks = links
       .filter(link => {
@@ -80,7 +80,7 @@ async function analyzeArticle(url: string, keyword: string) {
                  linkDomain !== articleDomain && 
                  link.href.startsWith('http');
         } catch (error) {
-          console.error(`Error processing link for ${url}:`, link, error);
+          console.error(`[Analysis] Error processing link for ${url}:`, link, error);
           return false;
         }
       })
@@ -96,7 +96,7 @@ async function analyzeArticle(url: string, keyword: string) {
         index === self.findIndex((l) => l.url === link.url)
       );
 
-    console.log(`Final external links count for ${url}:`, externalLinks.length);
+    console.log(`[Analysis] Final external links count for ${url}:`, externalLinks.length);
 
     const headings = [];
     if (article.html) {
@@ -135,7 +135,7 @@ async function analyzeArticle(url: string, keyword: string) {
       headingStructure: headings,
     };
   } catch (error) {
-    console.error(`Error analyzing article ${url}:`, error);
+    console.error(`[Analysis] Error analyzing article ${url}:`, error);
     throw error;
   }
 }
@@ -482,12 +482,12 @@ serve(async (req) => {
   }
 
   try {
-    console.log('Received request to analyze-articles function');
+    console.log('[Handler] Received request to analyze-articles function');
     
     const requestBody = await req.json();
     const { urls, keyword } = requestBody;
     
-    console.log('Request data:', { urls, keyword });
+    console.log('[Handler] Request data:', { urls, keyword });
     
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
       throw new Error('No URLs provided for analysis');
@@ -497,42 +497,53 @@ serve(async (req) => {
       throw new Error('No keyword provided for analysis');
     }
 
-    console.log('Starting parallel analysis for URLs:', urls);
+    console.log('[Handler] Starting parallel analysis for URLs:', urls);
     
-    // Process articles with better error handling and retries
+    // Use Promise.allSettled to handle all URLs, even if some fail
     const analysisResults = await Promise.allSettled(
       urls.map(url => analyzeArticle(url, keyword))
     );
 
-    // Filter and log results
-    const validResults = analysisResults
-      .map((result, index) => {
-        if (result.status === 'fulfilled') {
-          return result.value;
-        } else {
-          console.error(`Failed to analyze ${urls[index]}:`, result.reason);
-          return null;
-        }
-      })
-      .filter(Boolean);
+    // Log comprehensive summary of results
+    const successfulResults = [];
+    const failedUrls = [];
 
-    if (validResults.length === 0) {
+    analysisResults.forEach((result, index) => {
+      const url = urls[index];
+      if (result.status === 'fulfilled') {
+        successfulResults.push(result.value);
+        console.log(`[Handler] Successfully analyzed: ${url}`);
+      } else {
+        failedUrls.push({
+          url,
+          error: result.reason.message || 'Unknown error'
+        });
+        console.error(`[Handler] Failed to analyze ${url}:`, result.reason);
+      }
+    });
+
+    console.log('[Handler] Analysis summary:', {
+      total: urls.length,
+      successful: successfulResults.length,
+      failed: failedUrls.length,
+      failedUrls: failedUrls
+    });
+
+    if (successfulResults.length === 0) {
       throw new Error('No articles could be successfully analyzed');
     }
 
-    // Log analysis summary
-    console.log(`Analysis complete. Successfully analyzed ${validResults.length} out of ${urls.length} articles.`);
-    
-    const idealStructure = await generateIdealStructure(validResults, keyword);
+    const idealStructure = await generateIdealStructure(successfulResults, keyword);
 
     return new Response(
       JSON.stringify({
-        analyses: validResults,
+        analyses: successfulResults,
         idealStructure,
         summary: {
           totalUrls: urls.length,
-          successfulAnalyses: validResults.length,
-          failedAnalyses: urls.length - validResults.length
+          successfulAnalyses: successfulResults.length,
+          failedAnalyses: failedUrls.length,
+          failedUrls: failedUrls
         }
       }),
       {
@@ -543,7 +554,7 @@ serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error('Error in analyze-articles function:', error);
+    console.error('[Handler] Error in analyze-articles function:', error);
     
     return new Response(
       JSON.stringify({ 
@@ -560,4 +571,3 @@ serve(async (req) => {
     );
   }
 });
-

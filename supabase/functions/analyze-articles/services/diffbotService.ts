@@ -22,43 +22,58 @@ export interface DiffbotArticle {
   resolved_urls?: Array<string>;
 }
 
-export async function fetchWithDiffbot(url: string, retries = 5, initialDelay = 1000): Promise<DiffbotArticle> {
+export async function fetchWithDiffbot(url: string, retries = 8, initialDelay = 2000): Promise<DiffbotArticle> {
   const diffbotUrl = `https://api.diffbot.com/v3/article?token=${diffbotToken}&url=${encodeURIComponent(url)}`;
   
   for (let i = 0; i < retries; i++) {
     try {
-      console.log(`Attempting to fetch article with Diffbot (attempt ${i + 1}/${retries}) for URL: ${url}`);
+      console.log(`[Diffbot] Attempt ${i + 1}/${retries} for URL: ${url}`);
       
       const response = await fetch(diffbotUrl);
+      const statusCode = response.status;
       
-      if (response.status === 429) {
-        const delay = initialDelay * Math.pow(1.5, i);
-        console.log(`Rate limited for ${url}. Waiting ${delay}ms before retry...`);
+      console.log(`[Diffbot] Response status: ${statusCode} for URL: ${url}`);
+      
+      if (statusCode === 429) {
+        const retryAfter = response.headers.get('retry-after');
+        const delay = retryAfter ? parseInt(retryAfter) * 1000 : initialDelay * Math.pow(2, i);
+        console.log(`[Diffbot] Rate limited for ${url}. Waiting ${delay}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
       
       if (!response.ok) {
-        throw new Error(`Diffbot API error: ${response.status} for URL: ${url}`);
+        console.error(`[Diffbot] Error response for ${url}:`, { status: statusCode });
+        if (i === retries - 1) {
+          throw new Error(`Diffbot API error: ${statusCode} for URL: ${url}`);
+        }
+        const delay = initialDelay * Math.pow(2, i);
+        console.log(`[Diffbot] Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
       }
       
       const data = await response.json();
       
       if (!data.objects?.[0]) {
+        console.error(`[Diffbot] No article data in response for URL: ${url}`, data);
         throw new Error(`No article data returned from Diffbot for URL: ${url}`);
       }
       
-      console.log('Successfully fetched article from Diffbot:', url);
+      console.log(`[Diffbot] Successfully fetched article from Diffbot: ${url}`);
       return data.objects[0];
     } catch (error) {
-      console.error(`Diffbot API error (attempt ${i + 1}) for URL ${url}:`, error);
-      if (i === retries - 1) throw error;
-      const delay = initialDelay * Math.pow(1.5, i);
-      console.log(`Waiting ${delay}ms before retrying ${url}...`);
+      console.error(`[Diffbot] Error (attempt ${i + 1}) for URL ${url}:`, error);
+      
+      if (i === retries - 1) {
+        throw new Error(`Failed to fetch article after ${retries} attempts: ${url} - ${error.message}`);
+      }
+      
+      const delay = initialDelay * Math.pow(2, i);
+      console.log(`[Diffbot] Waiting ${delay}ms before retry ${i + 2}...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
   
   throw new Error(`Failed to fetch article after ${retries} attempts: ${url}`);
 }
-
