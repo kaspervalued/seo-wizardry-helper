@@ -1,3 +1,4 @@
+
 export interface Article {
   title: string;
   url: string;
@@ -15,6 +16,7 @@ export interface ExternalLink {
   text: string;
   domain: string;
   frequency?: number;
+  totalMentions?: number;
 }
 
 export interface KeywordWithFrequency {

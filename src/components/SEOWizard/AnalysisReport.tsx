@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import {
   Accordion,
@@ -21,6 +22,15 @@ const getKeywordPriorityClass = (frequency: number) => {
   if (frequency >= 3) return "bg-blue-800 text-white"; // High priority - dark blue
   if (frequency === 2) return "bg-blue-500 text-white"; // Medium priority - medium blue
   return "bg-blue-200 text-blue-800"; // Low priority - light blue
+};
+
+// Helper function to format frequency text
+const formatFrequencyText = (frequency: number, totalMentions: number) => {
+  const articleText = `${frequency} article${frequency !== 1 ? 's' : ''}`;
+  if (totalMentions > frequency) {
+    return `Found in ${articleText} (mentioned ${totalMentions} times)`;
+  }
+  return `Found in ${articleText}`;
 };
 
 export const AnalysisReport = ({
@@ -94,7 +104,7 @@ export const AnalysisReport = ({
                     </a>
                     {" "}
                     <span className="text-gray-500">
-                      ({link.domain}) - Found in {link.frequency} article{link.frequency !== 1 ? 's' : ''}
+                      ({link.domain}) - {formatFrequencyText(link.frequency, link.totalMentions || link.frequency)}
                     </span>
                   </li>
                 ))}
