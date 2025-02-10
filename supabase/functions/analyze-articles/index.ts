@@ -6,7 +6,6 @@ import { fetchWithDiffbot, type DiffbotArticle } from './services/diffbotService
 import { fetchMetaDescriptionWithSerpApi } from './services/serpApiService.ts';
 import { extractKeyPhrasesWithAI } from './services/openAiService.ts';
 
-// Get OpenAI API key from environment
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
 if (!openAIApiKey) {
@@ -18,9 +17,7 @@ async function analyzeArticle(url: string, keyword: string) {
   console.log(`Starting analysis for ${url}`);
   
   try {
-    // Add delay between articles to respect rate limits
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
+    // Run Diffbot and SerpAPI calls concurrently
     const [article, metaDescription] = await Promise.all([
       fetchWithDiffbot(url),
       fetchMetaDescriptionWithSerpApi(url)
@@ -34,8 +31,8 @@ async function analyzeArticle(url: string, keyword: string) {
     const textContent = article.text;
     const wordCount = textContent.split(/\s+/).length;
     
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
+    // Extract keywords concurrently with other processing
+    const keywordsPromise = extractKeyPhrasesWithAI(textContent, keyword);
 
     const articleDomain = extractDomain(url);
     console.log('Article domain:', articleDomain);
@@ -108,6 +105,9 @@ async function analyzeArticle(url: string, keyword: string) {
         }
       });
     }
+
+    // Wait for keywords extraction to complete
+    const keywords = await keywordsPromise;
 
     return {
       title: article.title || '',
@@ -470,11 +470,8 @@ Generate only the descriptions, no explanations or additional text.`;
 }
 
 serve(async (req) => {
-  // Always handle CORS preflight first
   if (req.method === 'OPTIONS') {
-    return new Response(null, { 
-      headers: corsHeaders 
-    });
+    return new Response(null, { headers: corsHeaders });
   }
 
   try {
@@ -493,34 +490,31 @@ serve(async (req) => {
       throw new Error('No keyword provided for analysis');
     }
 
-    console.log('Starting analysis for URLs:', urls);
+    console.log('Starting parallel analysis for URLs:', urls);
     
-    // Process articles sequentially with delay between each
-    const results = [];
-    for (const url of urls) {
-      try {
-        console.log(`Processing URL: ${url}`);
-        const result = await analyzeArticle(url, keyword);
-        if (result) results.push(result);
-        // Add delay between articles
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      } catch (error) {
-        console.error(`Failed to analyze article ${url}:`, error);
-        // Continue with other articles even if one fails
-      }
-    }
+    // Process all articles in parallel
+    const analysisPromises = urls.map(url => analyzeArticle(url, keyword));
+    const results = await Promise.all(
+      analysisPromises.map(p => p.catch(error => {
+        console.error('Article analysis failed:', error);
+        return null;
+      }))
+    );
 
-    if (results.length === 0) {
+    // Filter out failed analyses
+    const validResults = results.filter(Boolean);
+
+    if (validResults.length === 0) {
       throw new Error('No articles could be successfully analyzed');
     }
 
-    const idealStructure = await generateIdealStructure(results, keyword);
+    const idealStructure = await generateIdealStructure(validResults, keyword);
 
     console.log('Analysis completed successfully');
 
     return new Response(
       JSON.stringify({
-        analyses: results,
+        analyses: validResults,
         idealStructure,
       }),
       {
@@ -533,7 +527,6 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in analyze-articles function:', error);
     
-    // Always return error responses with CORS headers
     return new Response(
       JSON.stringify({ 
         error: error.message || 'Internal server error',

@@ -8,8 +8,6 @@ if (!openAIApiKey) {
 
 export async function extractKeyPhrasesWithAI(content: string, keyword: string): Promise<string[]> {
   try {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
     console.log('Making request to OpenAI API...');
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -18,7 +16,7 @@ export async function extractKeyPhrasesWithAI(content: string, keyword: string):
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini', // Using faster model
         messages: [
           {
             role: 'system',
@@ -31,21 +29,14 @@ export async function extractKeyPhrasesWithAI(content: string, keyword: string):
             - Return only complete, clean key phrases without any prefixes or special characters
             - Each phrase should be meaningful and self-contained
             - Do not include dashes, bullet points, or any other formatting
-            - Format as plain text, one phrase per line
-            
-            For example:
-            Static Application Security Testing
-            Dynamic Application Security Testing
-            Source Code Analysis
-            Runtime Detection
-            Vulnerability Scanning`
+            - Format as plain text, one phrase per line`
           },
           {
             role: 'user',
             content: content.substring(0, 4000)
           }
         ],
-        temperature: 0.3,
+        temperature: 0.2, // Reduced for faster responses
       }),
     });
 
