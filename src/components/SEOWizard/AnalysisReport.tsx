@@ -46,9 +46,14 @@ export const AnalysisReport = ({
 }: AnalysisReportProps) => {
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
 
+  console.log('All analyses:', analyses);
+
   // Separate SERP results from manually added URLs
   const serpResults = analyses.filter(analysis => !analysis.url.includes('youtu') && !analysis.url.includes('reddit'));
   const manuallyAddedUrls = analyses.filter(analysis => analysis.url.includes('youtu') || analysis.url.includes('reddit'));
+
+  console.log('SERP results:', serpResults);
+  console.log('Manually added URLs:', manuallyAddedUrls);
 
   return (
     <div className="space-y-8">
