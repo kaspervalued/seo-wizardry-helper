@@ -42,8 +42,6 @@ export interface ArticleAnalysis {
   readabilityScore: number;
   headingStructure: HeadingStructure[];
   error?: string;
-  source: 'search' | 'manual';
-  contentType: string;
 }
 
 export interface IdealStructure {
