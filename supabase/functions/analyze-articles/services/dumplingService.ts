@@ -86,7 +86,8 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
               'Authorization': `Bearer ${dumplingApiKey}`,
               'Content-Type': 'application/json',
               'Accept': 'application/json',
-              'Accept-Language': 'en-US,en;q=0.9'  // Add language header
+              'Accept-Language': 'en-US,en;q=0.9',  // Add language header
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'  // Add User-Agent header
             },
             body: JSON.stringify({ 
               url,
@@ -116,7 +117,8 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
           // YouTube Direct attempt
           const pageResponse = await fetch(service.endpoint, {
             headers: {
-              'Accept-Language': 'en-US,en;q=0.9'  // Add language header
+              'Accept-Language': 'en-US,en;q=0.9',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
           });
           const html = await pageResponse.text();
@@ -182,7 +184,12 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
 
 async function fetchYouTubeMetadata(videoId: string) {
   try {
-    const response = await fetch(`https://www.youtube.com/watch?v=${videoId}`);
+    const response = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
     const html = await response.text();
     
     // Extract title
