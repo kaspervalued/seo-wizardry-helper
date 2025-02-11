@@ -9,7 +9,36 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      content_analyses: {
+        Row: {
+          analysis: Json | null
+          content_type: Database["public"]["Enums"]["content_type"]
+          created_at: string | null
+          id: string
+          title: string | null
+          updated_at: string | null
+          url: string
+        }
+        Insert: {
+          analysis?: Json | null
+          content_type: Database["public"]["Enums"]["content_type"]
+          created_at?: string | null
+          id?: string
+          title?: string | null
+          updated_at?: string | null
+          url: string
+        }
+        Update: {
+          analysis?: Json | null
+          content_type?: Database["public"]["Enums"]["content_type"]
+          created_at?: string | null
+          id?: string
+          title?: string | null
+          updated_at?: string | null
+          url?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -18,7 +47,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      content_type: "article" | "reddit" | "youtube"
     }
     CompositeTypes: {
       [_ in never]: never
