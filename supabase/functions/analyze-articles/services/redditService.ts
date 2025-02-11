@@ -1,4 +1,3 @@
-
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
 interface RedditContent {
@@ -33,38 +32,46 @@ export async function analyzeRedditPost(url: string): Promise<RedditContent> {
 
     console.log('[Reddit] Extracted post ID:', postId);
 
-    // Fetch Reddit post data with proper headers and retries
-    const maxRetries = 3;
+    // Try different Reddit API endpoints
+    const endpoints = [
+      `https://www.reddit.com/comments/${postId}.json`,
+      `https://old.reddit.com/comments/${postId}.json`,
+      `https://reddit.com/comments/${postId}.json`
+    ];
+
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      'Accept': 'application/json',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'Connection': 'keep-alive'
+    };
+
     let lastError;
-    
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
+    for (const endpoint of endpoints) {
       try {
-        const response = await fetch(`https://www.reddit.com/comments/${postId}.json`, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'application/json'
-          }
-        });
+        console.log(`[Reddit] Trying endpoint: ${endpoint}`);
+        const response = await fetch(endpoint, { headers });
 
         if (!response.ok) {
-          console.error(`[Reddit] API response status (attempt ${attempt + 1}):`, response.status);
           const errorText = await response.text();
-          console.error(`[Reddit] API response text (attempt ${attempt + 1}):`, errorText);
-          throw new Error(`Reddit API error: ${response.status}`);
+          console.error(`[Reddit] API error for ${endpoint}:`, errorText);
+          continue;
         }
 
         const data = await response.json();
         const post = data[0]?.data?.children[0]?.data;
         
         if (!post) {
-          throw new Error('Could not fetch Reddit post data');
+          console.error(`[Reddit] No post data from ${endpoint}`);
+          continue;
         }
 
         // Extract comments
         const comments = data[1]?.data?.children
           ?.map((comment: any) => comment?.data?.body)
           .filter(Boolean)
-          .slice(0, 10); // Get top 10 comments
+          .slice(0, 10);
 
         const content = [
           post.selftext || '',
@@ -77,21 +84,55 @@ export async function analyzeRedditPost(url: string): Promise<RedditContent> {
           comments,
         };
       } catch (error) {
-        console.error(`[Reddit] Attempt ${attempt + 1} failed:`, error);
+        console.error(`[Reddit] Error with endpoint ${endpoint}:`, error);
         lastError = error;
-        if (attempt < maxRetries - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-          continue;
-        }
-        throw error;
       }
     }
 
-    throw lastError || new Error('Failed to fetch Reddit post after retries');
+    // If all endpoints fail, try to fetch using old.reddit.com HTML
+    try {
+      console.log('[Reddit] Attempting fallback to HTML scraping');
+      const fallbackData = await fetchRedditHtml(postId);
+      if (fallbackData) {
+        return fallbackData;
+      }
+    } catch (error) {
+      console.error('[Reddit] Fallback scraping failed:', error);
+    }
+
+    throw lastError || new Error('Failed to fetch Reddit post from all endpoints');
   } catch (error) {
     console.error('[Reddit] Error analyzing post:', error);
     throw error;
   }
+}
+
+async function fetchRedditHtml(postId: string): Promise<RedditContent> {
+  const response = await fetch(`https://old.reddit.com/comments/${postId}`, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+  });
+  
+  const html = await response.text();
+  
+  // Basic HTML parsing
+  const titleMatch = html.match(/<title>(.*?)<\/title>/);
+  const title = titleMatch ? 
+    titleMatch[1].replace(' : reddit.com', '').trim() : 
+    'Reddit Post';
+  
+  // Extract post content
+  const contentMatch = html.match(/<div class="usertext-body[^>]*>(.*?)<\/div>/s);
+  const content = contentMatch ? 
+    contentMatch[1].replace(/<[^>]+>/g, '').trim() : 
+    'Content not available';
+  
+  return {
+    title,
+    content,
+    comments: []
+  };
 }
 
 // Helper function to extract post ID from various Reddit URL formats

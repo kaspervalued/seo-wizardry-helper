@@ -1,4 +1,3 @@
-
 const dumplingApiKey = Deno.env.get('DUMPLING_API_KEY');
 
 interface TranscriptSegment {
@@ -28,13 +27,17 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
 
     console.log('[DumplingAI] Extracted video ID:', videoId);
     
-    // Implement retry logic for DumplingAI API
-    const maxRetries = 3;
-    let lastError;
+    // Try alternate endpoints and formats
+    const endpoints = [
+      'https://api.dumplingai.com/v1/youtube/transcript',
+      'https://api.dumplingai.com/v1/transcript',
+      'https://api.dumplingai.com/youtube/transcript'
+    ];
 
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
+    let lastError;
+    for (const endpoint of endpoints) {
       try {
-        const response = await fetch('https://api.dumplingai.com/v1/youtube/transcript', {
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${dumplingApiKey}`,
@@ -44,45 +47,65 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
           },
           body: JSON.stringify({ 
             url,
-            videoId, // Add video ID explicitly
-            format: 'text' // Request plain text format
+            videoId,
+            format: 'text'
           }),
         });
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error(`[DumplingAI] API error (attempt ${attempt + 1}):`, errorText);
-          throw new Error(`DumplingAI API error: ${response.status}`);
+          console.error(`[DumplingAI] API error for endpoint ${endpoint}:`, errorText);
+          continue;
         }
 
         const data = await response.json();
-        console.log('[DumplingAI] Successfully fetched transcript');
-
         if (!data.transcript && !data.text) {
-          throw new Error('No transcript available for this video');
+          console.error(`[DumplingAI] No transcript data for endpoint ${endpoint}`);
+          continue;
         }
 
+        console.log('[DumplingAI] Successfully fetched transcript from:', endpoint);
         return {
           title: data.title,
           text: data.transcript || data.text,
           segments: data.segments,
         };
       } catch (error) {
-        console.error(`[DumplingAI] Attempt ${attempt + 1} failed:`, error);
+        console.error(`[DumplingAI] Error with endpoint ${endpoint}:`, error);
         lastError = error;
-        if (attempt < maxRetries - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-          continue;
-        }
-        throw error;
       }
     }
 
-    throw lastError || new Error('Failed to fetch transcript after retries');
+    // If all endpoints failed, try to extract basic video info
+    try {
+      const fallbackData = await fetchBasicVideoInfo(videoId);
+      if (fallbackData) {
+        return fallbackData;
+      }
+    } catch (error) {
+      console.error('[DumplingAI] Fallback extraction failed:', error);
+    }
+
+    throw lastError || new Error('Failed to fetch transcript from all endpoints');
   } catch (error) {
     console.error('[DumplingAI] Error fetching transcript:', error);
     throw error;
   }
+}
+
+async function fetchBasicVideoInfo(videoId: string): Promise<TranscriptResponse> {
+  const response = await fetch(`https://www.youtube.com/watch?v=${videoId}`);
+  const html = await response.text();
+  
+  // Extract title from meta tags
+  const titleMatch = html.match(/<title>(.*?)<\/title>/);
+  const title = titleMatch ? titleMatch[1].replace(' - YouTube', '') : '';
+  
+  return {
+    title,
+    text: `Video ID: ${videoId}\nTitle: ${title}\n(Transcript not available)`,
+    segments: []
+  };
 }
 
 // Helper function to extract video ID from various YouTube URL formats
