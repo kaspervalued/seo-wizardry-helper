@@ -24,6 +24,11 @@ export interface KeywordWithFrequency {
   frequency: number;
 }
 
+interface RedditContent {
+  content: string;
+  comments?: string[];
+}
+
 export interface ArticleAnalysis {
   title: string;
   url: string;
@@ -44,7 +49,7 @@ export interface ArticleAnalysis {
   error?: string;
   // Add these new properties for YouTube and Reddit content
   transcript?: string;
-  content?: string;
+  redditContent?: RedditContent;
 }
 
 export interface IdealStructure {

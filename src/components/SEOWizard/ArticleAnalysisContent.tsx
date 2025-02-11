@@ -1,3 +1,4 @@
+
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArticleAnalysis } from "@/types/seo";
 
@@ -80,15 +81,13 @@ const StandardContent = ({ analysis }: { analysis: ArticleAnalysis }) => (
       </ul>
     </div>
 
-    {analysis.metaInformation && (
-      <div>
-        <h4 className="font-medium mb-2">Meta Information</h4>
-        <ul className="space-y-2 text-sm">
-          <li>Title: {analysis.metaTitle || 'N/A'}</li>
-          <li>Description: {analysis.metaDescription || 'N/A'}</li>
-        </ul>
-      </div>
-    )}
+    <div>
+      <h4 className="font-medium mb-2">Meta Information</h4>
+      <ul className="space-y-2 text-sm">
+        <li>Title: {analysis.metaTitle || 'N/A'}</li>
+        <li>Description: {analysis.metaDescription || 'N/A'}</li>
+      </ul>
+    </div>
 
     {analysis.keywords && analysis.keywords.length > 0 && (
       <div>
