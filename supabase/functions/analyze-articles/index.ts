@@ -8,6 +8,7 @@ import { extractKeyPhrasesWithAI } from './services/openAiService.ts';
 import { getYoutubeTranscript } from './services/dumplingService.ts';
 import { analyzeRedditPost } from './services/redditService.ts';
 import { supabase } from './supabaseClient.ts';
+import { extractVideoId, getVideoMetadata, getTranscript } from './services/youtubeService.ts';
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 const dumplingApiKey = Deno.env.get('DUMPLING_API_KEY');
@@ -32,13 +33,21 @@ async function analyzeYouTubeVideo(url: string, keyword: string) {
   console.log(`[Analysis] Starting YouTube analysis for ${url}`);
   
   try {
-    const transcript = await getYoutubeTranscript(url);
-    if (!transcript?.text) {
+    const videoId = extractVideoId(url);
+    console.log(`[Analysis] Extracted video ID: ${videoId}`);
+
+    // Get video metadata and transcript concurrently
+    const [metadata, transcript] = await Promise.all([
+      getVideoMetadata(videoId),
+      getTranscript(videoId)
+    ]);
+
+    if (!transcript) {
       throw new Error('No transcript or content available for this video');
     }
 
     // Process the text content
-    const textContent = transcript.text;
+    const textContent = transcript;
     const wordCount = textContent.split(/\s+/).length;
     
     // Extract keywords from available content
@@ -46,22 +55,23 @@ async function analyzeYouTubeVideo(url: string, keyword: string) {
     const domain = extractDomain(url);
 
     return {
-      title: transcript.title || url,
+      title: metadata.title || url,
       url: url,
       domain: domain,
       wordCount,
       characterCount: textContent.length,
       headingsCount: 0,
-      paragraphsCount: transcript.segments?.length || 1,
+      paragraphsCount: 1,
       imagesCount: 0,
       videosCount: 1,
       externalLinksCount: 0,
-      metaTitle: transcript.title || '',
-      metaDescription: textContent.slice(0, 200) + '...',
+      metaTitle: metadata.title || '',
+      metaDescription: metadata.description || '',
       keywords,
       contentType: 'youtube' as const,
       transcript: textContent,
-      segments: transcript.segments,
+      channelTitle: metadata.channelTitle,
+      publishedAt: metadata.publishedAt
     };
   } catch (error) {
     console.error(`[Analysis] Error analyzing YouTube video ${url}:`, error);
