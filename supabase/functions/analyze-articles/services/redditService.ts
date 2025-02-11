@@ -28,16 +28,27 @@ export async function analyzeRedditPost(url: string): Promise<RedditContent> {
         messages: [
           {
             role: 'system',
-            content: `You are an AI that analyzes Reddit posts. Given a Reddit URL, return the post's content in this JSON format:
+            content: `You are an AI that analyzes Reddit posts. For each post, provide:
+            1. The main title
+            2. A clear, well-structured summary of the original post's content, including:
+               - Main question or topic
+               - Key points or requirements mentioned
+               - Any specific context provided
+            3. A summary of the top comments/responses (if available), highlighting:
+               - Common themes in responses
+               - Notable suggestions or solutions
+               - Areas of agreement/disagreement
+            
+            Return the analysis in this JSON format:
             {
-              "title": "the post title",
-              "content": "the full post content including all relevant information",
-              "comments": ["top comment 1", "top comment 2", "top comment 3"] // Optional, include if available
+              "title": "post title",
+              "content": "comprehensive summary of the original post",
+              "comments": ["summary of key response 1", "summary of key response 2", ...]
             }`
           },
           {
             role: 'user',
-            content: `Please analyze this Reddit post and return its content: ${url}`
+            content: `Please analyze this Reddit post and summarize its content: ${url}`
           }
         ],
         temperature: 0.3,
