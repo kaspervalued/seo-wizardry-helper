@@ -44,61 +44,67 @@ export const ArticleAnalysisContent = ({ analysis }: ArticleAnalysisContentProps
         <div>
           <h4 className="font-medium mb-2">Meta Information</h4>
           <ul className="space-y-2 text-sm">
-            <li>Title: {analysis.metaTitle}</li>
-            <li>Description: {analysis.metaDescription}</li>
+            <li>Title: {analysis.metaTitle || 'N/A'}</li>
+            <li>Description: {analysis.metaDescription || 'N/A'}</li>
           </ul>
         </div>
 
-        <div>
-          <h4 className="font-medium mb-2">Key Phrases</h4>
-          <div className="flex flex-wrap gap-2">
-            {analysis.keywords.map((keyword, idx) => (
-              <span
-                key={idx}
-                className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs"
-              >
-                {keyword}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <h4 className="font-medium mb-2">External Links</h4>
-          <ul className="space-y-2 text-sm">
-            {analysis.externalLinks.map((link, idx) => (
-              <li key={idx}>
-                <a
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-500 hover:underline"
+        {analysis.keywords && analysis.keywords.length > 0 && (
+          <div>
+            <h4 className="font-medium mb-2">Key Phrases</h4>
+            <div className="flex flex-wrap gap-2">
+              {analysis.keywords.map((keyword, idx) => (
+                <span
+                  key={idx}
+                  className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs"
                 >
-                  {link.text || link.domain}
-                </a>{" "}
-                <span className="text-gray-500">({link.domain})</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+                  {keyword}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
-        <div>
-          <h4 className="font-medium mb-2">Heading Structure</h4>
-          <ul className="space-y-2 text-sm">
-            {analysis.headingStructure.map((heading, idx) => (
-              <li
-                key={idx}
-                className="pl-4"
-                style={{
-                  marginLeft: `${(parseInt(heading.level.slice(1)) - 1) * 16}px`,
-                }}
-              >
-                <span className="text-gray-500">{heading.level}:</span>{" "}
-                {heading.text}
-              </li>
-            ))}
-          </ul>
-        </div>
+        {analysis.externalLinks && analysis.externalLinks.length > 0 && (
+          <div>
+            <h4 className="font-medium mb-2">External Links</h4>
+            <ul className="space-y-2 text-sm">
+              {analysis.externalLinks.map((link, idx) => (
+                <li key={idx}>
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:underline"
+                  >
+                    {link.text || link.domain}
+                  </a>{" "}
+                  <span className="text-gray-500">({link.domain})</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {analysis.headingStructure && analysis.headingStructure.length > 0 && (
+          <div>
+            <h4 className="font-medium mb-2">Heading Structure</h4>
+            <ul className="space-y-2 text-sm">
+              {analysis.headingStructure.map((heading, idx) => (
+                <li
+                  key={idx}
+                  className="pl-4"
+                  style={{
+                    marginLeft: `${(parseInt(heading.level.slice(1)) - 1) * 16}px`,
+                  }}
+                >
+                  <span className="text-gray-500">{heading.level}:</span>{" "}
+                  {heading.text}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </ScrollArea>
   );
