@@ -13,6 +13,42 @@ interface TranscriptResponse {
   segments?: TranscriptSegment[];
 }
 
+async function logTranscriptAttempt(videoId: string, videoUrl: string, serviceName: string, responseStatus: number | null, responseBody: string | null, successful: boolean) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('[DumplingAI] Missing Supabase credentials for logging');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/transcript_extraction_logs`, {
+      method: 'POST',
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        video_id: videoId,
+        video_url: videoUrl,
+        service_name: serviceName,
+        response_status: responseStatus,
+        response_body: responseBody,
+        successful
+      })
+    });
+
+    if (!response.ok) {
+      console.error('[DumplingAI] Failed to log transcript attempt:', await response.text());
+    }
+  } catch (error) {
+    console.error('[DumplingAI] Error logging transcript attempt:', error);
+  }
+}
+
 export async function getYoutubeTranscript(url: string): Promise<TranscriptResponse> {
   console.log('[DumplingAI] Fetching transcript for:', url);
   
@@ -49,7 +85,8 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
             headers: {
               'Authorization': `Bearer ${dumplingApiKey}`,
               'Content-Type': 'application/json',
-              'Accept': 'application/json'
+              'Accept': 'application/json',
+              'Accept-Language': 'en-US,en;q=0.9'  // Add language header
             },
             body: JSON.stringify({ 
               url,
@@ -60,8 +97,11 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
             })
           });
 
+          const responseBody = await response.text();
+          await logTranscriptAttempt(videoId, url, service.name, response.status, responseBody, response.ok);
+
           if (response.ok) {
-            const data = await response.json();
+            const data = JSON.parse(responseBody);
             if (data.transcript || data.text) {
               return {
                 title: metadata.title || data.title,
@@ -70,26 +110,38 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
               };
             }
           } else {
-            console.log(`[DumplingAI] ${service.name} response not ok:`, await response.text());
+            console.log(`[DumplingAI] ${service.name} response not ok:`, responseBody);
           }
         } else {
-          // If we reach here, try to extract from YouTube page directly
-          const pageResponse = await fetch(service.endpoint);
+          // YouTube Direct attempt
+          const pageResponse = await fetch(service.endpoint, {
+            headers: {
+              'Accept-Language': 'en-US,en;q=0.9'  // Add language header
+            }
+          });
           const html = await pageResponse.text();
           
+          await logTranscriptAttempt(videoId, url, service.name, pageResponse.status, 
+            'HTML length: ' + html.length + ' bytes', false);
+
           // Look for caption tracks in the YouTube page
           const captionMatch = html.match(/"captionTracks":\[(.*?)\]/);
           if (captionMatch) {
             console.log('[DumplingAI] Found caption tracks in YouTube page');
             const captionData = JSON.parse(`[${captionMatch[1]}]`);
+            console.log('[DumplingAI] Caption tracks:', captionData);
+            
             const englishTrack = captionData.find((track: any) => 
-              track.languageCode === 'en' || track.vssId.includes('.en')
+              track.languageCode === 'en' || track.vssId?.includes('.en')
             );
             
             if (englishTrack?.baseUrl) {
-              console.log('[DumplingAI] Found English caption track');
+              console.log('[DumplingAI] Found English caption track:', englishTrack);
               const transcriptResponse = await fetch(englishTrack.baseUrl);
               const transcriptXml = await transcriptResponse.text();
+              
+              await logTranscriptAttempt(videoId, url, 'YouTube Captions API', 
+                transcriptResponse.status, transcriptXml, transcriptResponse.ok);
               
               // Basic XML parsing to extract text
               const textContent = transcriptXml
@@ -110,6 +162,8 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
         }
       } catch (error) {
         console.error(`[DumplingAI] ${service.name} attempt failed:`, error);
+        await logTranscriptAttempt(videoId, url, service.name, null, 
+          error instanceof Error ? error.message : 'Unknown error', false);
       }
     }
 

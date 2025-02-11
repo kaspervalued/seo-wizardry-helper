@@ -39,6 +39,39 @@ export type Database = {
         }
         Relationships: []
       }
+      transcript_extraction_logs: {
+        Row: {
+          created_at: string | null
+          id: string
+          response_body: string | null
+          response_status: number | null
+          service_name: string
+          successful: boolean
+          video_id: string
+          video_url: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          response_body?: string | null
+          response_status?: number | null
+          service_name: string
+          successful: boolean
+          video_id: string
+          video_url: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          response_body?: string | null
+          response_status?: number | null
+          service_name?: string
+          successful?: boolean
+          video_id?: string
+          video_url?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
