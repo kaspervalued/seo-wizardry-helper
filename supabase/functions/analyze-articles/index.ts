@@ -33,13 +33,15 @@ async function analyzeYouTubeVideo(url: string, keyword: string) {
   
   try {
     const transcript = await getYoutubeTranscript(url);
-    if (!transcript) {
-      throw new Error('No transcript available for this video');
+    if (!transcript?.text) {
+      throw new Error('No transcript or content available for this video');
     }
 
+    // Process the text content
     const textContent = transcript.text;
     const wordCount = textContent.split(/\s+/).length;
     
+    // Extract keywords from available content
     const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
     const domain = extractDomain(url);
 
@@ -51,6 +53,11 @@ async function analyzeYouTubeVideo(url: string, keyword: string) {
       characterCount: textContent.length,
       headingsCount: 0,
       paragraphsCount: transcript.segments?.length || 1,
+      imagesCount: 0,
+      videosCount: 1,
+      externalLinksCount: 0,
+      metaTitle: transcript.title || '',
+      metaDescription: textContent.slice(0, 200) + '...',
       keywords,
       contentType: 'youtube' as const,
       transcript: textContent,

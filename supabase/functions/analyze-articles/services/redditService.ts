@@ -17,9 +17,10 @@ export async function analyzeRedditPost(url: string): Promise<RedditContent> {
 
     // Check if it's a search URL
     if (urlObj.pathname.includes('/search/')) {
+      const query = urlObj.searchParams.get('q');
       return {
-        title: 'Reddit Search Results',
-        content: `Search query: ${urlObj.searchParams.get('q') || 'Not specified'}`,
+        title: `Reddit Search: ${query || 'Unknown Query'}`,
+        content: `Search query: ${query || 'Not specified'}`,
         comments: []
       };
     }
@@ -32,30 +33,39 @@ export async function analyzeRedditPost(url: string): Promise<RedditContent> {
 
     console.log('[Reddit] Extracted post ID:', postId);
 
-    // Try different Reddit API endpoints
+    // First try old.reddit.com without JSON (more reliable)
+    try {
+      console.log('[Reddit] Trying old.reddit.com HTML fetch');
+      const htmlData = await fetchRedditHtml(postId);
+      if (htmlData && htmlData.content && htmlData.content !== 'Content not available') {
+        return htmlData;
+      }
+    } catch (error) {
+      console.error('[Reddit] HTML fetch failed:', error);
+    }
+
+    // Then try JSON endpoints
     const endpoints = [
-      `https://www.reddit.com/comments/${postId}.json`,
-      `https://old.reddit.com/comments/${postId}.json`,
-      `https://reddit.com/comments/${postId}.json`
+      { url: `https://old.reddit.com/comments/${postId}.json`, name: 'old.reddit.com' },
+      { url: `https://www.reddit.com/comments/${postId}.json`, name: 'www.reddit.com' },
+      { url: `https://reddit.com/comments/${postId}.json`, name: 'reddit.com' }
     ];
 
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-      'Accept': 'application/json',
-      'Cache-Control': 'no-cache',
-      'Pragma': 'no-cache',
-      'Connection': 'keep-alive'
+      'Accept': 'application/json'
     };
 
-    let lastError;
     for (const endpoint of endpoints) {
       try {
-        console.log(`[Reddit] Trying endpoint: ${endpoint}`);
-        const response = await fetch(endpoint, { headers });
+        console.log(`[Reddit] Trying ${endpoint.name}`);
+        const response = await fetch(endpoint.url, { 
+          headers,
+          credentials: 'omit'  // Don't send cookies
+        });
 
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`[Reddit] API error for ${endpoint}:`, errorText);
+          console.error(`[Reddit] ${endpoint.name} returned ${response.status}`);
           continue;
         }
 
@@ -63,7 +73,7 @@ export async function analyzeRedditPost(url: string): Promise<RedditContent> {
         const post = data[0]?.data?.children[0]?.data;
         
         if (!post) {
-          console.error(`[Reddit] No post data from ${endpoint}`);
+          console.error(`[Reddit] No post data from ${endpoint.name}`);
           continue;
         }
 
@@ -74,33 +84,23 @@ export async function analyzeRedditPost(url: string): Promise<RedditContent> {
           .slice(0, 10);
 
         const content = [
+          post.title,
           post.selftext || '',
           ...(comments || [])
-        ].join('\n\n');
+        ].filter(Boolean).join('\n\n');
 
         return {
           title: post.title,
-          content,
-          comments,
+          content: content || 'No content available',
+          comments
         };
       } catch (error) {
-        console.error(`[Reddit] Error with endpoint ${endpoint}:`, error);
-        lastError = error;
+        console.error(`[Reddit] ${endpoint.name} attempt failed:`, error);
       }
     }
 
-    // If all endpoints fail, try to fetch using old.reddit.com HTML
-    try {
-      console.log('[Reddit] Attempting fallback to HTML scraping');
-      const fallbackData = await fetchRedditHtml(postId);
-      if (fallbackData) {
-        return fallbackData;
-      }
-    } catch (error) {
-      console.error('[Reddit] Fallback scraping failed:', error);
-    }
-
-    throw lastError || new Error('Failed to fetch Reddit post from all endpoints');
+    // If all attempts fail, try HTML scraping one last time
+    return await fetchRedditHtml(postId);
   } catch (error) {
     console.error('[Reddit] Error analyzing post:', error);
     throw error;
@@ -108,29 +108,63 @@ export async function analyzeRedditPost(url: string): Promise<RedditContent> {
 }
 
 async function fetchRedditHtml(postId: string): Promise<RedditContent> {
-  const response = await fetch(`https://old.reddit.com/comments/${postId}`, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+  const urls = [
+    { url: `https://old.reddit.com/comments/${postId}`, name: 'old.reddit.com' },
+    { url: `https://www.reddit.com/comments/${postId}`, name: 'www.reddit.com' }
+  ];
+
+  for (const endpoint of urls) {
+    try {
+      console.log(`[Reddit] Trying HTML fetch from ${endpoint.name}`);
+      const response = await fetch(endpoint.url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html'
+        },
+        credentials: 'omit'  // Don't send cookies
+      });
+
+      if (!response.ok) {
+        console.error(`[Reddit] HTML fetch from ${endpoint.name} failed with ${response.status}`);
+        continue;
+      }
+
+      const html = await response.text();
+      
+      // Extract title
+      const titleMatch = html.match(/<title>([^<]*)<\/title>/);
+      const title = titleMatch ? 
+        titleMatch[1].replace(' : reddit.com', '').trim() : 
+        'Reddit Post';
+      
+      // Extract post content
+      const contentMatch = html.match(/<div class="usertext-body[^>]*>(.*?)<\/div>/s);
+      const contentText = contentMatch ? 
+        contentMatch[1].replace(/<[^>]+>/g, '').trim() : 
+        '';
+
+      // Extract comments
+      const commentMatches = html.match(/<div class="usertext-body[^>]*>(.*?)<\/div>/g) || [];
+      const comments = commentMatches
+        .slice(1) // Skip the first match (post content)
+        .map(match => match.replace(/<[^>]+>/g, '').trim())
+        .filter(Boolean)
+        .slice(0, 10);
+
+      const content = [title, contentText, ...comments].filter(Boolean).join('\n\n');
+      
+      if (content && content !== title) {
+        return { title, content, comments };
+      }
+    } catch (error) {
+      console.error(`[Reddit] HTML parsing for ${endpoint.name} failed:`, error);
     }
-  });
-  
-  const html = await response.text();
-  
-  // Basic HTML parsing
-  const titleMatch = html.match(/<title>(.*?)<\/title>/);
-  const title = titleMatch ? 
-    titleMatch[1].replace(' : reddit.com', '').trim() : 
-    'Reddit Post';
-  
-  // Extract post content
-  const contentMatch = html.match(/<div class="usertext-body[^>]*>(.*?)<\/div>/s);
-  const content = contentMatch ? 
-    contentMatch[1].replace(/<[^>]+>/g, '').trim() : 
-    'Content not available';
-  
+  }
+
+  // If everything fails, return a basic response
   return {
-    title,
-    content,
+    title: `Reddit Post (${postId})`,
+    content: 'Content unavailable - Reddit may be blocking access to this post.',
     comments: []
   };
 }
