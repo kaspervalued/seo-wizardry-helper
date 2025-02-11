@@ -71,7 +71,7 @@ export const AnalysisReport = ({
       return analysis.transcript && analysis.transcript.length > 50;
     }
     if (type === 'reddit') {
-      return analysis.content && analysis.content.length > 50;
+      return analysis.redditContent && analysis.redditContent.content && analysis.redditContent.content.length > 50;
     }
     return true;
   };
