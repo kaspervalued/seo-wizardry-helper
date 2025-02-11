@@ -28,34 +28,57 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
 
     console.log('[DumplingAI] Extracted video ID:', videoId);
     
-    const response = await fetch('https://api.dumplingai.com/v1/youtube/transcript', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${dumplingApiKey}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({ url }),
-    });
+    // Implement retry logic for DumplingAI API
+    const maxRetries = 3;
+    let lastError;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[DumplingAI] API error:', errorText);
-      throw new Error(`DumplingAI API error: ${response.status}`);
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await fetch('https://api.dumplingai.com/v1/youtube/transcript', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${dumplingApiKey}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          },
+          body: JSON.stringify({ 
+            url,
+            videoId, // Add video ID explicitly
+            format: 'text' // Request plain text format
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[DumplingAI] API error (attempt ${attempt + 1}):`, errorText);
+          throw new Error(`DumplingAI API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('[DumplingAI] Successfully fetched transcript');
+
+        if (!data.transcript && !data.text) {
+          throw new Error('No transcript available for this video');
+        }
+
+        return {
+          title: data.title,
+          text: data.transcript || data.text,
+          segments: data.segments,
+        };
+      } catch (error) {
+        console.error(`[DumplingAI] Attempt ${attempt + 1} failed:`, error);
+        lastError = error;
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+          continue;
+        }
+        throw error;
+      }
     }
 
-    const data = await response.json();
-    console.log('[DumplingAI] Successfully fetched transcript');
-
-    if (!data.transcript && !data.text) {
-      throw new Error('No transcript available for this video');
-    }
-
-    return {
-      title: data.title,
-      text: data.transcript || data.text,
-      segments: data.segments,
-    };
+    throw lastError || new Error('Failed to fetch transcript after retries');
   } catch (error) {
     console.error('[DumplingAI] Error fetching transcript:', error);
     throw error;
