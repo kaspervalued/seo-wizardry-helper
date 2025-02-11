@@ -6,11 +6,32 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/components/ui/use-toast";
 import { Article } from "@/types/seo";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 
 interface ArticleListProps {
   articles: Article[];
   onSubmit: (selectedArticles: Article[]) => void;
 }
+
+const getContentType = (url: string): 'article' | 'reddit' | 'youtube' => {
+  if (url.includes('reddit.com')) return 'reddit';
+  if (url.includes('youtu.be') || url.includes('youtube.com')) return 'youtube';
+  return 'article';
+};
+
+const ContentTypeBadge = ({ type }: { type: 'article' | 'reddit' | 'youtube' }) => {
+  const variants = {
+    article: 'bg-blue-100 text-blue-800',
+    reddit: 'bg-orange-100 text-orange-800',
+    youtube: 'bg-red-100 text-red-800',
+  };
+
+  return (
+    <Badge className={variants[type]} variant="secondary">
+      {type}
+    </Badge>
+  );
+};
 
 export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
   const [selectedArticles, setSelectedArticles] = useState<Article[]>([]);
@@ -38,7 +59,7 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
       .filter(url => url !== '')
       .map((url, index) => ({
         url,
-        title: `Custom Article ${index + 1}`,
+        title: `Custom ${getContentType(url)} ${index + 1}`,
         snippet: url,
         rank: articles.length + index + 1
       }));
@@ -86,9 +107,12 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
                   onCheckedChange={() => handleToggleArticle(article)}
                 />
                 <div className="flex-1 space-y-1">
-                  <p className="font-medium text-sm text-primary">
-                    Rank #{index + 1}
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium text-sm text-primary">
+                      Rank #{index + 1}
+                    </p>
+                    <ContentTypeBadge type={getContentType(article.url)} />
+                  </div>
                   <h3 className="font-medium">{article.title}</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     {article.snippet}
@@ -112,13 +136,16 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
         <div className="space-y-2">
           <label className="text-sm font-medium">Add Custom URLs</label>
           <Textarea
-            placeholder="Enter URLs (one per line)"
+            placeholder="Enter URLs (one per line)
+Examples:
+https://www.youtube.com/watch?v=...
+https://www.reddit.com/r/..."
             value={customUrls}
             onChange={(e) => setCustomUrls(e.target.value)}
             className="h-32"
           />
           <p className="text-sm text-gray-500">
-            Add your own article URLs, one per line
+            Add your own article URLs, YouTube videos, or Reddit posts (one per line)
           </p>
         </div>
       </div>
@@ -129,7 +156,7 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
           {customUrls.split('\n').filter(url => url.trim() !== '').length > 0 && 
             ` + ${customUrls.split('\n').filter(url => url.trim() !== '').length} custom URLs`}
         </p>
-        <Button onClick={handleSubmit}>Analyze Selected Articles</Button>
+        <Button onClick={handleSubmit}>Analyze Selected Content</Button>
       </div>
     </div>
   );

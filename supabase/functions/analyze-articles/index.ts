@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders } from './utils/cors.ts';
@@ -6,12 +5,90 @@ import { extractDomain, extractLinksFromHTML } from './utils/urlUtils.ts';
 import { fetchWithDiffbot, type DiffbotArticle } from './services/diffbotService.ts';
 import { fetchMetaDescriptionWithSerpApi } from './services/serpApiService.ts';
 import { extractKeyPhrasesWithAI } from './services/openAiService.ts';
+import { getYoutubeTranscript } from './services/dumplingService.ts';
+import { analyzeRedditPost } from './services/redditService.ts';
+import { supabase } from './supabaseClient.ts';
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+const dumplingApiKey = Deno.env.get('DUMPLING_API_KEY');
 
 if (!openAIApiKey) {
   console.error('Missing OpenAI API key');
   throw new Error('OPENAI_API_KEY not set');
+}
+
+if (!dumplingApiKey) {
+  console.error('Missing DumplingAI API key');
+  throw new Error('DUMPLING_API_KEY not set');
+}
+
+const getContentType = (url: string): 'article' | 'reddit' | 'youtube' => {
+  if (url.includes('reddit.com')) return 'reddit';
+  if (url.includes('youtu.be') || url.includes('youtube.com')) return 'youtube';
+  return 'article';
+};
+
+async function analyzeYouTubeVideo(url: string, keyword: string) {
+  console.log(`[Analysis] Starting YouTube analysis for ${url}`);
+  
+  try {
+    const transcript = await getYoutubeTranscript(url);
+    if (!transcript) {
+      throw new Error('No transcript available for this video');
+    }
+
+    const textContent = transcript.text;
+    const wordCount = textContent.split(/\s+/).length;
+    
+    const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
+    const domain = extractDomain(url);
+
+    return {
+      title: transcript.title || url,
+      url: url,
+      domain: domain,
+      wordCount,
+      characterCount: textContent.length,
+      headingsCount: 0,
+      paragraphsCount: transcript.segments?.length || 1,
+      keywords,
+      contentType: 'youtube' as const,
+      transcript: textContent,
+      segments: transcript.segments,
+    };
+  } catch (error) {
+    console.error(`[Analysis] Error analyzing YouTube video ${url}:`, error);
+    throw error;
+  }
+}
+
+async function analyzeRedditContent(url: string, keyword: string) {
+  console.log(`[Analysis] Starting Reddit analysis for ${url}`);
+  
+  try {
+    const redditData = await analyzeRedditPost(url);
+    const textContent = redditData.content;
+    const wordCount = textContent.split(/\s+/).length;
+    
+    const keywords = await extractKeyPhrasesWithAI(textContent, keyword);
+    const domain = extractDomain(url);
+
+    return {
+      title: redditData.title,
+      url: url,
+      domain: domain,
+      wordCount,
+      characterCount: textContent.length,
+      headingsCount: 0,
+      paragraphsCount: 1,
+      keywords,
+      contentType: 'reddit' as const,
+      redditContent: redditData,
+    };
+  } catch (error) {
+    console.error(`[Analysis] Error analyzing Reddit post ${url}:`, error);
+    throw error;
+  }
 }
 
 async function analyzeArticle(url: string, keyword: string) {
@@ -499,9 +576,19 @@ serve(async (req) => {
 
     console.log('[Handler] Starting parallel analysis for URLs:', urls);
     
-    // Use Promise.allSettled to handle all URLs, even if some fail
+    // Analyze each URL based on its content type
     const analysisResults = await Promise.allSettled(
-      urls.map(url => analyzeArticle(url, keyword))
+      urls.map(async (url) => {
+        const contentType = getContentType(url);
+        switch (contentType) {
+          case 'youtube':
+            return await analyzeYouTubeVideo(url, keyword);
+          case 'reddit':
+            return await analyzeRedditContent(url, keyword);
+          default:
+            return await analyzeArticle(url, keyword);
+        }
+      })
     );
 
     // Log comprehensive summary of results
@@ -530,10 +617,27 @@ serve(async (req) => {
     });
 
     if (successfulResults.length === 0) {
-      throw new Error('No articles could be successfully analyzed');
+      throw new Error('No content could be successfully analyzed');
     }
 
     const idealStructure = await generateIdealStructure(successfulResults, keyword);
+
+    // Store analysis results in Supabase
+    const { data: storedAnalyses, error: dbError } = await supabase
+      .from('content_analyses')
+      .upsert(
+        successfulResults.map(result => ({
+          url: result.url,
+          content_type: getContentType(result.url),
+          title: result.title,
+          analysis: result,
+          updated_at: new Date().toISOString()
+        }))
+      );
+
+    if (dbError) {
+      console.error('[Handler] Error storing analyses:', dbError);
+    }
 
     return new Response(
       JSON.stringify({
