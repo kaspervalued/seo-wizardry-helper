@@ -236,48 +236,44 @@ async function generateIdealStructure(analyses: any[], keyword: string) {
       keywords: analysis.keywords
     }));
 
-    const outlinePrompt = `As an expert SEO content strategist, analyze this data and generate the perfect article outline that will outrank all existing articles for "${keyword}".
+    const outlinePrompt = `As an expert SEO content strategist, I need you to generate a perfectly structured article outline in valid JSON format. The outline should help create content that will outrank existing articles for "${keyword}".
 
 Context:
 - Focus keyword: "${keyword}"
-- Analyzed articles:
-${allContent.map(content => `
-Title: ${content.title}
-Description: ${content.description}
-Headings: ${content.headings.map(h => `\n  ${h.level}: ${h.text}`).join('')}
-Keywords: ${content.keywords.join(', ')}
-`).join('\n')}
+- Target word count: ${calculatedTargetWordCount}
+- Number of analyzed articles: ${analyses.length}
 
-Requirements for the perfect outline:
-1. Create a comprehensive outline that covers all essential aspects of "${keyword}"
-2. Structure the content to demonstrate deep expertise and authority
-3. Address user intent comprehensively by answering all relevant questions
-4. Include practical examples, use cases, and implementation guidance where relevant
-5. Cover both basic concepts for beginners and advanced insights for experts
-6. Target length: ${calculatedTargetWordCount} words
-7. Format as a hierarchical outline with H2 and H3 headings only
-
-Additional guidelines:
-- Ensure logical flow and progression of topics
-- Include sections that competitors might have missed
-- Balance theory with practical application
-- Consider both beginner and advanced user needs
-- Include clear comparisons and evaluations where relevant
-- Address common questions and concerns
-
-Return ONLY a valid JSON object in this exact format, with no additional text or formatting:
+Requirements:
+1. Return ONLY a valid JSON object with this exact structure:
 {
   "headings": [
     {
-      "id": "string-id",
-      "level": "h2 or h3",
+      "id": "unique-string-id",
+      "level": "h2",
       "text": "heading text",
-      "children": [] 
+      "children": [
+        {
+          "id": "child-unique-id",
+          "level": "h3",
+          "text": "subheading text"
+        }
+      ]
     }
   ]
-}`;
+}
 
-    console.log('Sending outline generation prompt to OpenAI:', outlinePrompt);
+2. The outline must:
+- Use only h2 and h3 headings
+- Have unique string IDs for each heading
+- Include 4-6 main sections (h2)
+- Include 2-4 subsections (h3) under each main section
+- Cover all essential aspects of "${keyword}"
+- Address both basic and advanced topics
+- Include practical examples and implementations
+
+Do not include any explanation or additional text. Return ONLY the JSON object.`;
+
+    console.log('Sending outline generation prompt to OpenAI');
 
     const outlineResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -290,26 +286,33 @@ Return ONLY a valid JSON object in this exact format, with no additional text or
         messages: [
           { 
             role: 'system', 
-            content: 'You are an SEO expert that generates comprehensive article outlines optimized to outrank competing content. Always return ONLY valid JSON, no markdown or additional text.' 
+            content: 'You are an AI that generates article outlines in valid JSON format. Always verify the JSON structure is valid before responding.' 
           },
           { role: 'user', content: outlinePrompt }
         ],
-        temperature: 0.7,
+        temperature: 0.2,
+        response_format: { type: "json_object" }
       }),
     });
 
     if (!outlineResponse.ok) {
-      throw new Error(`OpenAI API error: ${outlineResponse.status}`);
+      console.error('OpenAI API error:', await outlineResponse.text());
+      throw new Error('Failed to generate outline from OpenAI');
     }
 
     const outlineData = await outlineResponse.json();
     console.log('Raw OpenAI response:', outlineData);
 
-    let generatedOutline;
+    let parsedOutline;
     try {
-      const content = outlineData.choices[0].message.content.trim();
+      const content = outlineData.choices[0].message.content;
       console.log('Parsing outline content:', content);
-      generatedOutline = JSON.parse(content);
+      parsedOutline = JSON.parse(content);
+      
+      // Validate the structure
+      if (!parsedOutline.headings || !Array.isArray(parsedOutline.headings)) {
+        throw new Error('Invalid outline structure: missing headings array');
+      }
     } catch (parseError) {
       console.error('Error parsing outline JSON:', parseError);
       throw new Error('Failed to parse outline JSON from OpenAI response');
@@ -545,7 +548,7 @@ Generate only the descriptions, no explanations or additional text.`;
       suggestedDescriptions,
       recommendedKeywords: rankedKeywords,
       recommendedExternalLinks: rankedLinks,
-      outline: generatedOutline.headings,
+      outline: parsedOutline.headings,
     };
   } catch (error) {
     console.error('Error in generateIdealStructure:', error);

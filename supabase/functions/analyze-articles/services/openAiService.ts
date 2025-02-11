@@ -16,11 +16,15 @@ export async function extractKeyPhrasesWithAI(content: string, keyword: string):
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini', // Using faster model
+        model: 'gpt-4o', // Using more reliable model
         messages: [
           {
             role: 'system',
-            content: `Analyze the content and extract 5-7 key phrases that are:
+            content: `You are an AI assistant that extracts key phrases from content. Always return phrases as simple text, one per line.`
+          },
+          {
+            role: 'user',
+            content: `Analyze this content and extract 5-7 key phrases that are:
             1. Most frequently mentioned across the text
             2. Highly relevant to the main topic "${keyword}"
             3. Technical or industry-specific terms
@@ -36,7 +40,7 @@ export async function extractKeyPhrasesWithAI(content: string, keyword: string):
             content: content.substring(0, 4000)
           }
         ],
-        temperature: 0.2, // Reduced for faster responses
+        temperature: 0.3,
       }),
     });
 
