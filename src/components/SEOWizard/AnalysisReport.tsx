@@ -9,6 +9,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 import { ArticleAnalysis, IdealStructure } from "@/types/seo";
 import { IdealArticleCard } from "./IdealArticleCard";
 import { ArticleAnalysisContent } from "./ArticleAnalysisContent";
@@ -39,6 +41,19 @@ const ContentTypeBadge = ({ type }: { type: 'article' | 'reddit' | 'youtube' }) 
   );
 };
 
+const ContentStatusBadge = ({ status }: { status: 'success' | 'error' }) => {
+  const variants = {
+    success: 'bg-green-100 text-green-800',
+    error: 'bg-red-100 text-red-800',
+  };
+
+  return (
+    <Badge className={variants[status]} variant="secondary">
+      {status === 'success' ? 'Content Available' : 'Content Unavailable'}
+    </Badge>
+  );
+};
+
 export const AnalysisReport = ({
   analyses,
   idealStructure,
@@ -46,14 +61,20 @@ export const AnalysisReport = ({
 }: AnalysisReportProps) => {
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
 
-  console.log('All analyses:', analyses);
-
   // Separate SERP results from manually added URLs
   const serpResults = analyses.filter(analysis => !analysis.url.includes('youtu') && !analysis.url.includes('reddit'));
   const manuallyAddedUrls = analyses.filter(analysis => analysis.url.includes('youtu') || analysis.url.includes('reddit'));
 
-  console.log('SERP results:', serpResults);
-  console.log('Manually added URLs:', manuallyAddedUrls);
+  const isContentAvailable = (analysis: ArticleAnalysis) => {
+    const type = getContentType(analysis.url);
+    if (type === 'youtube') {
+      return analysis.transcript && analysis.transcript.length > 50;
+    }
+    if (type === 'reddit') {
+      return analysis.content && analysis.content.length > 50;
+    }
+    return true;
+  };
 
   return (
     <div className="space-y-8">
@@ -78,19 +99,41 @@ export const AnalysisReport = ({
       {manuallyAddedUrls.length > 0 && (
         <Card className="p-6">
           <h3 className="text-lg font-semibold mb-4">Manual URL Analysis Reports</h3>
-          <Accordion type="single" collapsible>
-            {manuallyAddedUrls.map((analysis, index) => (
-              <AccordionItem key={index} value={`manual-${index}`}>
-                <AccordionTrigger className="text-left flex items-center gap-3">
-                  <ContentTypeBadge type={getContentType(analysis.url)} />
-                  {analysis.title}
-                </AccordionTrigger>
-                <AccordionContent>
-                  <ArticleAnalysisContent analysis={analysis} />
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
+          {manuallyAddedUrls.map((analysis, index) => {
+            const type = getContentType(analysis.url);
+            const contentAvailable = isContentAvailable(analysis);
+
+            return (
+              <div key={index} className="mb-6 last:mb-0">
+                <div className="flex items-center gap-3 mb-3">
+                  <ContentTypeBadge type={type} />
+                  <ContentStatusBadge status={contentAvailable ? 'success' : 'error'} />
+                </div>
+
+                {!contentAvailable && (
+                  <Alert variant="warning" className="mb-4">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      {type === 'youtube' 
+                        ? "Could not retrieve video transcript. The content shown is limited to basic video information."
+                        : "Could not access the Reddit post content. This might be due to the post being private or deleted."}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                <Accordion type="single" collapsible>
+                  <AccordionItem value={`manual-${index}`}>
+                    <AccordionTrigger className="text-left">
+                      {analysis.title || analysis.url}
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <ArticleAnalysisContent analysis={analysis} />
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </div>
+            );
+          })}
         </Card>
       )}
 
