@@ -42,6 +42,9 @@ export interface ArticleAnalysis {
   readabilityScore: number;
   headingStructure: HeadingStructure[];
   error?: string;
+  // Add these new properties for YouTube and Reddit content
+  transcript?: string;
+  content?: string;
 }
 
 export interface IdealStructure {

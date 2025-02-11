@@ -111,7 +111,7 @@ export const AnalysisReport = ({
                 </div>
 
                 {!contentAvailable && (
-                  <Alert variant="warning" className="mb-4">
+                  <Alert variant="destructive" className="mb-4">
                     <AlertTriangle className="h-4 w-4" />
                     <AlertDescription>
                       {type === 'youtube' 
