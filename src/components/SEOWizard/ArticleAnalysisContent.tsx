@@ -48,6 +48,66 @@ const RedditContent = ({ analysis }: { analysis: ArticleAnalysis }) => {
   );
 };
 
+const YouTubeContent = ({ analysis }: { analysis: ArticleAnalysis }) => {
+  const hasTranscript = analysis.transcript && analysis.transcript.length > 50;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h4 className="font-medium mb-2">Video Information</h4>
+        <ul className="space-y-2 text-sm">
+          <li>Title: {analysis.title || 'N/A'}</li>
+          <li>
+            URL:{" "}
+            <a
+              href={analysis.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:underline"
+            >
+              Watch Video
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      {hasTranscript ? (
+        <div>
+          <h4 className="font-medium mb-2">Video Transcript</h4>
+          <div className="text-sm whitespace-pre-wrap bg-gray-50 p-4 rounded">
+            {analysis.transcript}
+          </div>
+        </div>
+      ) : (
+        <div className="text-sm text-amber-600 bg-amber-50 p-4 rounded">
+          Full transcript could not be retrieved. This might be due to:
+          <ul className="list-disc pl-4 mt-2">
+            <li>Video language not supported</li>
+            <li>Closed captions not available</li>
+            <li>Private or restricted video access</li>
+          </ul>
+        </div>
+      )}
+
+      {analysis.keywords && analysis.keywords.length > 0 && hasTranscript && (
+        <div>
+          <h4 className="font-medium mb-2">Key Topics Discussed</h4>
+          <div className="flex flex-wrap gap-2">
+            {analysis.keywords.map((keyword, idx) => (
+              <span
+                key={idx}
+                className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs"
+              >
+                {keyword}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const StandardContent = ({ analysis }: { analysis: ArticleAnalysis }) => (
   <div className="space-y-4">
     <div>
@@ -162,6 +222,8 @@ export const ArticleAnalysisContent = ({ analysis }: ArticleAnalysisContentProps
       <div className="space-y-4 p-4">
         {contentType === 'reddit' ? (
           <RedditContent analysis={analysis} />
+        ) : contentType === 'youtube' ? (
+          <YouTubeContent analysis={analysis} />
         ) : (
           <StandardContent analysis={analysis} />
         )}

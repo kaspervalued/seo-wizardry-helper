@@ -1,3 +1,4 @@
+
 const dumplingApiKey = Deno.env.get('DUMPLING_API_KEY');
 
 interface TranscriptSegment {
@@ -31,7 +32,7 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
     const metadata = await fetchYouTubeMetadata(videoId);
     console.log('[DumplingAI] Fetched metadata:', metadata);
 
-    // Try transcript services
+    // Try multiple transcript services in sequence
     const services = [
       { name: 'DumplingAI', endpoint: 'https://api.dumplingai.com/v1/youtube/transcript' },
       { name: 'DumplingAI Alt', endpoint: 'https://api.dumplingai.com/v1/transcript' },
@@ -53,7 +54,9 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
             body: JSON.stringify({ 
               url,
               videoId,
-              format: 'text'
+              language: 'en', // Explicitly request English transcript
+              format: 'text',
+              timestamps: true
             })
           });
 
@@ -66,14 +69,44 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
                 segments: data.segments || []
               };
             }
+          } else {
+            console.log(`[DumplingAI] ${service.name} response not ok:`, await response.text());
           }
         } else {
-          // Fallback to basic metadata
-          return {
-            title: metadata.title,
-            text: `Title: ${metadata.title}\nDescription: ${metadata.description || 'No description available'}\n\nNote: Full transcript could not be retrieved. Video metadata shown instead.`,
-            segments: []
-          };
+          // If we reach here, try to extract from YouTube page directly
+          const pageResponse = await fetch(service.endpoint);
+          const html = await pageResponse.text();
+          
+          // Look for caption tracks in the YouTube page
+          const captionMatch = html.match(/"captionTracks":\[(.*?)\]/);
+          if (captionMatch) {
+            console.log('[DumplingAI] Found caption tracks in YouTube page');
+            const captionData = JSON.parse(`[${captionMatch[1]}]`);
+            const englishTrack = captionData.find((track: any) => 
+              track.languageCode === 'en' || track.vssId.includes('.en')
+            );
+            
+            if (englishTrack?.baseUrl) {
+              console.log('[DumplingAI] Found English caption track');
+              const transcriptResponse = await fetch(englishTrack.baseUrl);
+              const transcriptXml = await transcriptResponse.text();
+              
+              // Basic XML parsing to extract text
+              const textContent = transcriptXml
+                .match(/<text[^>]*>(.*?)<\/text>/g)
+                ?.map(line => line.replace(/<[^>]+>/g, '').trim())
+                .filter(Boolean)
+                .join('\n');
+
+              if (textContent) {
+                return {
+                  title: metadata.title,
+                  text: textContent,
+                  segments: []
+                };
+              }
+            }
+          }
         }
       } catch (error) {
         console.error(`[DumplingAI] ${service.name} attempt failed:`, error);
@@ -81,6 +114,7 @@ export async function getYoutubeTranscript(url: string): Promise<TranscriptRespo
     }
 
     // If all attempts fail, return basic metadata
+    console.log('[DumplingAI] All transcript extraction attempts failed, returning metadata only');
     return {
       title: metadata.title,
       text: `Title: ${metadata.title}\nDescription: ${metadata.description || 'No description available'}\n\nNote: Transcript service unavailable. Video metadata shown instead.`,
