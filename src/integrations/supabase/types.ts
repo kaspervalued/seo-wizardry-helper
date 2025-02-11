@@ -72,6 +72,36 @@ export type Database = {
         }
         Relationships: []
       }
+      youtube_video_metadata: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          language_code: string | null
+          title: string | null
+          transcript: string | null
+          updated_at: string | null
+          video_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          language_code?: string | null
+          title?: string | null
+          transcript?: string | null
+          updated_at?: string | null
+          video_id: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          language_code?: string | null
+          title?: string | null
+          transcript?: string | null
+          updated_at?: string | null
+          video_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
