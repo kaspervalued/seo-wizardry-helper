@@ -1,9 +1,11 @@
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/components/ui/use-toast";
 import { Article } from "@/types/seo";
+import { Textarea } from "@/components/ui/textarea";
 
 interface ArticleListProps {
   articles: Article[];
@@ -12,6 +14,7 @@ interface ArticleListProps {
 
 export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
   const [selectedArticles, setSelectedArticles] = useState<Article[]>([]);
+  const [customUrls, setCustomUrls] = useState<string>("");
   const { toast } = useToast();
 
   const handleToggleArticle = (article: Article) => {
@@ -29,25 +32,34 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
   };
 
   const handleSubmit = async () => {
-    if (selectedArticles.length === 0) {
+    const urlsToAdd = customUrls
+      .split('\n')
+      .map(url => url.trim())
+      .filter(url => url !== '')
+      .map((url, index) => ({
+        url,
+        title: `Custom Article ${index + 1}`,
+        snippet: url,
+        rank: articles.length + index + 1
+      }));
+
+    if (selectedArticles.length === 0 && urlsToAdd.length === 0) {
       toast({
         title: "Error",
-        description: "Please select at least one article",
+        description: "Please select at least one article or add custom URLs",
         variant: "destructive",
       });
       return;
     }
 
-    const currentSelected = [...selectedArticles];
-    if (currentSelected.length > 0) {
-      onSubmit(currentSelected);
-    } else {
-      toast({
-        title: "Error",
-        description: "Please select at least one article",
-        variant: "destructive",
-      });
-    }
+    const allArticles = [
+      ...selectedArticles,
+      ...urlsToAdd.filter(newArticle => 
+        !selectedArticles.some(selected => selected.url === newArticle.url)
+      )
+    ];
+
+    onSubmit(allArticles);
   };
 
   return (
@@ -96,9 +108,26 @@ export const ArticleList = ({ articles, onSubmit }: ArticleListProps) => {
         </ScrollArea>
       </div>
 
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Add Custom URLs</label>
+          <Textarea
+            placeholder="Enter URLs (one per line)"
+            value={customUrls}
+            onChange={(e) => setCustomUrls(e.target.value)}
+            className="h-32"
+          />
+          <p className="text-sm text-gray-500">
+            Add your own article URLs, one per line
+          </p>
+        </div>
+      </div>
+
       <div className="flex justify-between items-center">
         <p className="text-sm text-gray-500">
           {selectedArticles.length} articles selected
+          {customUrls.split('\n').filter(url => url.trim() !== '').length > 0 && 
+            ` + ${customUrls.split('\n').filter(url => url.trim() !== '').length} custom URLs`}
         </p>
         <Button onClick={handleSubmit}>Analyze Selected Articles</Button>
       </div>
