@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders } from './utils/cors.ts';
@@ -28,6 +27,115 @@ const getContentType = (url: string): 'article' | 'reddit' | 'youtube' => {
   if (url.includes('youtu.be') || url.includes('youtube.com')) return 'youtube';
   return 'article';
 };
+
+async function generateIdealStructure(analyses: any[], keyword: string) {
+  // Create a basic ideal structure based on the analyzed content
+  const allKeywords = analyses.flatMap(analysis => analysis.keywords || []);
+  const keywordFrequency = new Map();
+  allKeywords.forEach(kw => {
+    keywordFrequency.set(kw, (keywordFrequency.get(kw) || 0) + 1);
+  });
+
+  const sortedKeywords = Array.from(keywordFrequency.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([text, frequency]) => ({ text, frequency }));
+
+  // Calculate average word count from successful article analyses
+  const articleWordCounts = analyses
+    .filter(a => a.wordCount && a.wordCount > 0)
+    .map(a => a.wordCount);
+  
+  const targetWordCount = articleWordCounts.length > 0
+    ? Math.round(articleWordCounts.reduce((a, b) => a + b, 0) / articleWordCounts.length)
+    : 1500; // Default if no valid word counts
+
+  // Collect all external links
+  const allLinks = analyses.flatMap(analysis => analysis.externalLinks || []);
+  const linkFrequency = new Map();
+  allLinks.forEach(link => {
+    const key = `${link.domain}|${link.url}|${link.text}`;
+    linkFrequency.set(key, (linkFrequency.get(key) || 0) + 1);
+  });
+
+  const recommendedLinks = Array.from(linkFrequency.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([key, frequency]) => {
+      const [domain, url, text] = key.split('|');
+      return {
+        domain,
+        url,
+        text,
+        frequency
+      };
+    });
+
+  // Generate suggested titles based on keyword and analyzed content
+  const suggestedTitles = [
+    `Complete Guide to ${keyword}`,
+    `Understanding ${keyword}: A Comprehensive Overview`,
+    `${keyword}: Best Practices and Implementation`,
+    `Everything You Need to Know About ${keyword}`,
+    `${keyword} Explained: Key Concepts and Strategies`
+  ];
+
+  // Generate suggested meta descriptions
+  const suggestedDescriptions = [
+    `Learn everything about ${keyword} in this comprehensive guide. Discover key concepts, best practices, and practical implementation strategies.`,
+    `Explore ${keyword} in detail with our expert insights. Find out how to effectively implement and optimize your approach.`,
+    `Master ${keyword} with our in-depth guide. Understand core principles and get practical tips for success.`
+  ];
+
+  // Create a basic outline structure
+  const outline = [
+    {
+      id: '1',
+      level: 'h2' as const,
+      text: `Introduction to ${keyword}`,
+      content: `Provide a comprehensive introduction to ${keyword} and its importance in the current context.`
+    },
+    {
+      id: '2',
+      level: 'h2' as const,
+      text: 'Key Concepts and Definitions',
+      content: 'Define and explain the fundamental concepts and terminology.',
+      children: sortedKeywords.slice(0, 3).map((kw, idx) => ({
+        id: `2-${idx + 1}`,
+        level: 'h3' as const,
+        text: kw.text,
+        content: `Explain ${kw.text} in detail and its relevance to ${keyword}.`
+      }))
+    },
+    {
+      id: '3',
+      level: 'h2' as const,
+      text: 'Best Practices and Implementation',
+      content: 'Outline the best practices and implementation strategies.',
+    },
+    {
+      id: '4',
+      level: 'h2' as const,
+      text: 'Common Challenges and Solutions',
+      content: 'Address typical challenges and provide practical solutions.',
+    },
+    {
+      id: '5',
+      level: 'h2' as const,
+      text: 'Conclusion and Next Steps',
+      content: `Summarize key points about ${keyword} and suggest next steps for implementation.`
+    }
+  ];
+
+  return {
+    targetWordCount,
+    recommendedKeywords: sortedKeywords,
+    recommendedExternalLinks: recommendedLinks,
+    suggestedTitles,
+    suggestedDescriptions,
+    outline
+  };
+}
 
 async function analyzeYouTubeVideo(url: string, keyword: string) {
   console.log(`[Analysis] Starting YouTube analysis for ${url}`);
